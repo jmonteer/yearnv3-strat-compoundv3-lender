@@ -1,0 +1,16 @@
+from enum import IntFlag
+
+DAY = 86400
+WEEK = 7 * DAY
+YEAR = 31_556_952  # same value used in vault
+MAX_INT = 2 ** 256 - 1
+ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
+
+REL_ERROR = 1e-6
+
+
+class ROLES(IntFlag):
+    STRATEGY_MANAGER = 1
+    DEBT_MANAGER = 2
+    EMERGENCY_MANAGER = 4
+    ACCOUNTING_MANAGER = 8
