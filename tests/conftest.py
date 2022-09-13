@@ -44,10 +44,10 @@ def atoken():
 @pytest.fixture(scope="session")
 def create_vault(project, gov):
     def create_vault(
-            asset,
-            governance=gov,
-            deposit_limit=MAX_INT,
-            max_profit_locking_time=WEEK,
+        asset,
+        governance=gov,
+        deposit_limit=MAX_INT,
+        max_profit_locking_time=WEEK,
     ):
         vault = gov.deploy(
             project.VaultV3, asset, "VaultV3", "AV", governance, max_profit_locking_time
@@ -129,7 +129,10 @@ def user_interaction(strategy, vault, deposit_into_vault):
         awhale = "0x13873fa4B7771F3492825B00D1c37301fF41C348"
         lp = Contract("0x7d2768dE32b0b80b7a3454c06BdAc94A69DDc7A9")
         lp.withdraw(
-            "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", int(10 ** 6), awhale, sender=accounts[awhale]
+            "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+            int(10**6),
+            awhale,
+            sender=accounts[awhale],
         )
 
     yield user_interaction

@@ -90,7 +90,7 @@ def test_free_funds_idle_asset(
     assert atoken.balanceOf(strategy) == 0
     vault_balance = asset.balanceOf(vault)
 
-    strategy.freeFunds(9 ** 6, sender=vault)
+    strategy.freeFunds(9**6, sender=vault)
 
     assert asset.balanceOf(strategy) == new_debt
     assert strategy.totalAssets() == new_debt
@@ -160,7 +160,7 @@ def test_free_funds_atokens(
     # Let´s force Aave pool to update
     user_interaction()
 
-    funds_to_free = 9 * 10 ** 11
+    funds_to_free = 9 * 10**11
     strategy.freeFunds(funds_to_free, sender=vault)
 
     assert asset.balanceOf(strategy) == funds_to_free
