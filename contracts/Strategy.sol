@@ -44,6 +44,20 @@ contract Strategy is ERC4626BaseStrategy {
         maxAssets = type(uint256).max;
     }
 
+    function maxWithdraw(address owner)
+        public
+        view
+        virtual
+        override
+        returns (uint256)
+    {
+        return
+            Math.min(
+                IERC20(asset()).balanceOf(aToken),
+                _convertToAssets(balanceOf(owner), Math.Rounding.Down)
+            );
+    }
+
     function _freeFunds(uint256 _amount)
         internal
         override
