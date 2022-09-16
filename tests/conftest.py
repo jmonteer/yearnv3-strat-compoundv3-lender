@@ -40,7 +40,6 @@ def atoken():
     return Contract(AASSET_ADDRESS)
 
 
-# TODO: deploying vault, as there is no vault yet on mainnet. To be deleted once vault v3 is deployed
 @pytest.fixture(scope="session")
 def create_vault(project, gov):
     def create_vault(
@@ -76,9 +75,7 @@ def vault(gov, asset, create_vault):
 @pytest.fixture
 def create_strategy(project, strategist):
     def create_strategy(vault):
-        strategy = strategist.deploy(
-            project.Strategy, vault.address, "strategy_name", "strategy_symbol"
-        )
+        strategy = strategist.deploy(project.Strategy, vault.address, "strategy_name")
         return strategy
 
     yield create_strategy
