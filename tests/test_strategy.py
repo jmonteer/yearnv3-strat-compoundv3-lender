@@ -92,7 +92,7 @@ def test_total_assets(
     assert strategy.totalAssets() == pytest.approx(new_debt, REL_ERROR)
     assert asset.balanceOf(vault) == amount - new_debt
     assert asset.balanceOf(strategy) == 0
-    assert atoken.balanceOf(strategy) == new_debt
+    assert atoken.balanceOf(strategy) == pytest.approx(new_debt, REL_ERROR)
 
 
 def test_balance_of(create_vault_and_strategy, gov, amount, provide_strategy_with_debt):

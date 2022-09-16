@@ -15,7 +15,7 @@ contract Strategy {
     using Math for uint256;
 
     IProtocolDataProvider public constant protocolDataProvider =
-    IProtocolDataProvider(0x057835Ad21a177dbdd3090bB1CAE03EaCF78Fc6d);
+        IProtocolDataProvider(0x057835Ad21a177dbdd3090bB1CAE03EaCF78Fc6d);
 
     string public name;
     address public immutable aToken;
@@ -23,26 +23,23 @@ contract Strategy {
     address public vault;
     uint256 public totalSupply;
 
-//    shares
+    //    shares
     mapping(address => uint256) private balances;
 
-    constructor(
-        address _vault,
-        string memory _name
-    ) {
+    constructor(address _vault, string memory _name) {
         vault = _vault;
         name = _name;
         asset = IVault(vault).asset();
-        (address _aToken, ,) = protocolDataProvider.getReserveTokensAddresses(
+        (address _aToken, , ) = protocolDataProvider.getReserveTokensAddresses(
             asset
         );
         aToken = _aToken;
     }
 
     function maxDeposit(address receiver)
-    public
-    view
-    returns (uint256 maxAssets)
+        public
+        view
+        returns (uint256 maxAssets)
     {
         maxAssets = type(uint256).max;
     }
@@ -56,7 +53,7 @@ contract Strategy {
     }
 
     function pricePerShare() public view returns (uint256) {
-        return _convert_to_assets(10 ** IVault(vault).decimals());
+        return _convert_to_assets(10**IVault(vault).decimals());
     }
 
     function totalAssets() public view returns (uint256) {
@@ -68,8 +65,8 @@ contract Strategy {
     }
 
     function deposit(uint256 assets, address receiver)
-    public
-    returns (uint256)
+        public
+        returns (uint256)
     {
         // transfer and invest
         IERC20(asset).transferFrom(vault, address(this), assets);
@@ -79,9 +76,12 @@ contract Strategy {
         return assets;
     }
 
-
     function maxWithdraw(address owner) public view returns (uint256) {
-        return Math.min(IERC20(asset).balanceOf(aToken), convertToAssets(balanceOf(owner)));
+        return
+            Math.min(
+                IERC20(asset).balanceOf(aToken),
+                convertToAssets(balanceOf(owner))
+            );
     }
 
     function withdraw(
@@ -89,20 +89,16 @@ contract Strategy {
         address receiver,
         address owner
     ) public returns (uint256) {
-        require(
-            amount <= maxWithdraw(owner),
-            "withdraw more than max"
-        );
+        require(amount <= maxWithdraw(owner), "withdraw more than max");
         return _withdraw(amount, receiver, owner);
     }
-
 
     function _convert_to_assets(uint256 shares) public view returns (uint256) {
         // if total_supply is 0, price_per_share is 1
         if (totalSupply == 0) {
             return shares;
         }
-        return shares * totalAssets() / totalSupply;
+        return (shares * totalAssets()) / totalSupply;
     }
 
     function _convert_to_shares(uint256 assets) public view returns (uint256) {
@@ -110,12 +106,12 @@ contract Strategy {
         if (totalSupply == 0) {
             return assets;
         }
-        return assets * totalSupply / totalAssets();
+        return (assets * totalSupply) / totalAssets();
     }
 
     function _freeFunds(uint256 _amount)
-    internal
-    returns (uint256 _amountFreed)
+        internal
+        returns (uint256 _amountFreed)
     {
         uint256 idle_amount = balanceOfAsset();
         if (_amount <= idle_amount) {
@@ -125,17 +121,17 @@ contract Strategy {
             // We need to take from Aave enough to reach _amount
             // Balance of
             // We run with 'unchecked' as we are safe from underflow
-        unchecked {
-            _withdrawFromAave(
-                Math.min(
-                    _amount - idle_amount,
+            unchecked {
+                _withdrawFromAave(
                     Math.min(
-                        balanceOfAToken(),
-                        IERC20(asset).balanceOf(aToken)
+                        _amount - idle_amount,
+                        Math.min(
+                            balanceOfAToken(),
+                            IERC20(asset).balanceOf(aToken)
+                        )
                     )
-                )
-            );
-        }
+                );
+            }
             _amountFreed = balanceOfAsset();
         }
     }
@@ -145,7 +141,6 @@ contract Strategy {
         address receiver,
         address owner
     ) internal returns (uint256) {
-
         uint256 amount_to_withdraw = _freeFunds(amount);
         uint256 shares = _convert_to_shares(amount_to_withdraw);
         balances[owner] -= shares;
@@ -189,9 +184,9 @@ contract Strategy {
 
     function _lendingPool() internal view returns (ILendingPool) {
         return
-        ILendingPool(
-            protocolDataProvider.ADDRESSES_PROVIDER().getLendingPool()
-        );
+            ILendingPool(
+                protocolDataProvider.ADDRESSES_PROVIDER().getLendingPool()
+            );
     }
 
     function balanceOfAToken() internal view returns (uint256) {
