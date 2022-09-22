@@ -21,10 +21,6 @@ contract Strategy {
     address public immutable aToken;
     address public immutable asset;
     address public vault;
-    uint256 public totalSupply;
-
-    //    shares
-    mapping(address => uint256) private balances;
 
     constructor(address _vault, string memory _name) {
         vault = _vault;
@@ -45,43 +41,41 @@ contract Strategy {
     }
 
     function convertToAssets(uint256 shares) public view returns (uint256) {
-        return _convert_to_assets(shares);
+        // 1:1
+        return shares;
     }
 
     function convertToShares(uint256 assets) public view returns (uint256) {
-        return _convert_to_shares(assets);
-    }
-
-    function pricePerShare() public view returns (uint256) {
-        return _convert_to_assets(10**IVault(vault).decimals());
+        // 1:1
+        return assets;
     }
 
     function totalAssets() public view returns (uint256) {
         return _totalAssets();
     }
 
-    function balanceOf(address _address) public view returns (uint256) {
-        return balances[_address];
+    function balanceOf(address owner) public view returns (uint256) {
+        if (owner == vault) {
+            return _totalAssets();
+        }
+        return 0;
     }
 
     function deposit(uint256 assets, address receiver)
         public
         returns (uint256)
     {
+        require(msg.sender == vault && msg.sender == receiver);
+
         // transfer and invest
         IERC20(asset).transferFrom(vault, address(this), assets);
-        balances[receiver] += assets;
-        totalSupply += _convert_to_shares(assets);
         _invest();
         return assets;
     }
 
     function maxWithdraw(address owner) public view returns (uint256) {
-        return
-            Math.min(
-                IERC20(asset).balanceOf(aToken),
-                convertToAssets(balanceOf(owner))
-            );
+        // TODO: review
+        return Math.min(IERC20(asset).balanceOf(aToken), _totalAssets());
     }
 
     function withdraw(
@@ -91,22 +85,6 @@ contract Strategy {
     ) public returns (uint256) {
         require(amount <= maxWithdraw(owner), "withdraw more than max");
         return _withdraw(amount, receiver, owner);
-    }
-
-    function _convert_to_assets(uint256 shares) public view returns (uint256) {
-        // if total_supply is 0, price_per_share is 1
-        if (totalSupply == 0) {
-            return shares;
-        }
-        return (shares * totalAssets()) / totalSupply;
-    }
-
-    function _convert_to_shares(uint256 assets) public view returns (uint256) {
-        // if total_supply is 0, price_per_share is 1
-        if (totalSupply == 0) {
-            return assets;
-        }
-        return (assets * totalSupply) / totalAssets();
     }
 
     function _freeFunds(uint256 _amount)
@@ -123,13 +101,7 @@ contract Strategy {
             // We run with 'unchecked' as we are safe from underflow
             unchecked {
                 _withdrawFromAave(
-                    Math.min(
-                        _amount - idle_amount,
-                        Math.min(
-                            balanceOfAToken(),
-                            IERC20(asset).balanceOf(aToken)
-                        )
-                    )
+                    Math.min(_amount - idle_amount, balanceOfAToken())
                 );
             }
             _amountFreed = balanceOfAsset();
@@ -142,9 +114,6 @@ contract Strategy {
         address owner
     ) internal returns (uint256) {
         uint256 amount_to_withdraw = _freeFunds(amount);
-        uint256 shares = _convert_to_shares(amount_to_withdraw);
-        balances[owner] -= shares;
-        totalSupply -= shares;
         IERC20(asset).transfer(receiver, amount_to_withdraw);
         return amount_to_withdraw;
     }
