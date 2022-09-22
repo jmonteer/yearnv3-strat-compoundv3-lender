@@ -109,6 +109,15 @@ def test_balance_of(create_vault_and_strategy, gov, amount, provide_strategy_wit
     assert strategy.balanceOf(vault) == pytest.approx(new_debt + new_new_debt, 1e-4)
 
 
+def test_deposit_no_vault__reverts(create_vault_and_strategy, gov, amount, user):
+    vault, strategy = create_vault_and_strategy(gov, amount)
+    with reverts("not owner"):
+        strategy.deposit(100, user, sender=user)
+
+    with reverts("not owner"):
+        strategy.deposit(100, user, sender=vault)
+
+
 def test_deposit(
     asset, atoken, create_vault_and_strategy, gov, amount, provide_strategy_with_debt
 ):
@@ -161,6 +170,18 @@ def test_max_withdraw_no_liquidity(
     )
 
     assert strategy.maxWithdraw(vault) == 10 ** vault.decimals()
+
+
+def test_withdraw_no_owner__reverts(create_vault_and_strategy, gov, amount, user):
+    vault, strategy = create_vault_and_strategy(gov, amount)
+    with reverts("not owner"):
+        strategy.withdraw(100, user, user, sender=vault)
+
+
+def test_withdraw_above_max__reverts(create_vault_and_strategy, gov, amount, user):
+    vault, strategy = create_vault_and_strategy(gov, amount)
+    with reverts("withdraw more than max"):
+        strategy.withdraw(100, vault, vault, sender=vault)
 
 
 def test_withdraw_more_than_max(

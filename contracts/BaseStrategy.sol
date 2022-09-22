@@ -52,7 +52,7 @@ abstract contract BaseStrategy {
         public
         returns (uint256)
     {
-        require(msg.sender == vault && msg.sender == receiver);
+        require(msg.sender == vault && msg.sender == receiver, "not owner");
 
         // transfer and invest
         IERC20(asset).transferFrom(vault, address(this), assets);
@@ -69,6 +69,7 @@ abstract contract BaseStrategy {
         address receiver,
         address owner
     ) public returns (uint256) {
+        require(msg.sender == owner, "not owner");
         require(amount <= maxWithdraw(owner), "withdraw more than max");
         return _withdraw(amount, receiver, owner);
     }

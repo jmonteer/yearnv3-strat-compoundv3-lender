@@ -1,4 +1,4 @@
-name: ape-strategy-mix
+name: ape-aave-lender
 
 plugins:
   - name: solidity
