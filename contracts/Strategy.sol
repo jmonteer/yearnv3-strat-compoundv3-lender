@@ -26,7 +26,12 @@ contract Strategy is BaseStrategy {
         aToken = _aToken;
     }
 
-    function maxWithdraw(address owner) public view override returns (uint256) {
+    function _maxWithdraw(address owner)
+        internal
+        view
+        override
+        returns (uint256)
+    {
         return Math.min(IERC20(asset).balanceOf(aToken), _totalAssets());
     }
 
@@ -56,9 +61,7 @@ contract Strategy is BaseStrategy {
         address receiver,
         address owner
     ) internal override returns (uint256) {
-        uint256 amount_to_withdraw = _freeFunds(amount);
-        IERC20(asset).transfer(receiver, amount_to_withdraw);
-        return amount_to_withdraw;
+        return _freeFunds(amount);
     }
 
     function _totalAssets() internal view override returns (uint256) {
