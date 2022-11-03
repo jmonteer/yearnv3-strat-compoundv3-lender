@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0
 
 pragma solidity 0.8.14;
-pragma experimental ABIEncoderV2;
 
 import "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {IERC20, BaseStrategy} from "BaseStrategy.sol";
 
-import "./interfaces/ILendingPool.sol";
-import "./interfaces/ILendingPoolAddressesProvider.sol";
-import "./interfaces/IProtocolDataProvider.sol";
+import "./interfaces/aave/ILendingPool.sol";
+import "./interfaces/aave/ILendingPoolAddressesProvider.sol";
+import "./interfaces/aave/IProtocolDataProvider.sol";
+import "./interfaces/aave/IReserveInterestRateStrategy.sol";
+import "./libraries//aave/DataTypes.sol";
 
 contract Strategy is BaseStrategy {
     IProtocolDataProvider public constant protocolDataProvider =
@@ -17,28 +18,25 @@ contract Strategy is BaseStrategy {
 
     address public immutable aToken;
 
-    constructor(address _vault, string memory _name)
-        BaseStrategy(_vault, _name)
-    {
+    constructor(
+        address _vault,
+        string memory _name
+    ) BaseStrategy(_vault, _name) {
         (address _aToken, , ) = protocolDataProvider.getReserveTokensAddresses(
             asset
         );
         aToken = _aToken;
     }
 
-    function _maxWithdraw(address owner)
-        internal
-        view
-        override
-        returns (uint256)
-    {
+    function _maxWithdraw(
+        address owner
+    ) internal view override returns (uint256) {
         return Math.min(IERC20(asset).balanceOf(aToken), _totalAssets());
     }
 
-    function _freeFunds(uint256 _amount)
-        internal
-        returns (uint256 _amountFreed)
-    {
+    function _freeFunds(
+        uint256 _amount
+    ) internal returns (uint256 _amountFreed) {
         uint256 idle_amount = balanceOfAsset();
         if (_amount <= idle_amount) {
             // we have enough idle assets for the vault to take
@@ -112,20 +110,33 @@ contract Strategy is BaseStrategy {
         return IERC20(asset).balanceOf(address(this));
     }
 
-    function aprAfterDelta(int256 delta) external view returns (uint256) {
+    function aprAfterDebtChange(int256 delta) external view returns (uint256) {
         // i need to calculate new supplyRate after Deposit (when deposit has not been done yet)
-        DataTypes.ReserveData memory reserveData = _lendingPool().getReserveData(address(want));
+        DataTypes.ReserveData memory reserveData = _lendingPool()
+            .getReserveData(address(asset));
 
-        (uint256 availableLiquidity, uint256 totalStableDebt, uint256 totalVariableDebt, , , , uint256 averageStableBorrowRate, , , ) =
-            protocolDataProvider.getReserveData(address(want));
+        (
+            uint256 availableLiquidity,
+            uint256 totalStableDebt,
+            uint256 totalVariableDebt,
+            ,
+            ,
+            ,
+            uint256 averageStableBorrowRate,
+            ,
+            ,
 
-        int256 newLiquidity = int256(availableLiquidity) + extraAmount;
+        ) = protocolDataProvider.getReserveData(address(asset));
 
-        (, , , , uint256 reserveFactor, , , , , ) = protocolDataProvider.getReserveConfigurationData(address(want));
+        int256 newLiquidity = int256(availableLiquidity) + delta;
 
-        (uint256 newLiquidityRate, , ) =
-            IReserveInterestRateStrategy(reserveData.interestRateStrategyAddress).calculateInterestRates(
-                address(want),
+        (, , , , uint256 reserveFactor, , , , , ) = protocolDataProvider
+            .getReserveConfigurationData(address(asset));
+
+        (uint256 newLiquidityRate, , ) = IReserveInterestRateStrategy(
+            reserveData.interestRateStrategyAddress
+        ).calculateInterestRates(
+                address(asset),
                 uint256(newLiquidity),
                 totalStableDebt,
                 totalVariableDebt,
