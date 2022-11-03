@@ -111,4 +111,28 @@ contract Strategy is BaseStrategy {
     function balanceOfAsset() internal view returns (uint256) {
         return IERC20(asset).balanceOf(address(this));
     }
+
+    function aprAfterDelta(int256 delta) external view returns (uint256) {
+        // i need to calculate new supplyRate after Deposit (when deposit has not been done yet)
+        DataTypes.ReserveData memory reserveData = _lendingPool().getReserveData(address(want));
+
+        (uint256 availableLiquidity, uint256 totalStableDebt, uint256 totalVariableDebt, , , , uint256 averageStableBorrowRate, , , ) =
+            protocolDataProvider.getReserveData(address(want));
+
+        int256 newLiquidity = int256(availableLiquidity) + extraAmount;
+
+        (, , , , uint256 reserveFactor, , , , , ) = protocolDataProvider.getReserveConfigurationData(address(want));
+
+        (uint256 newLiquidityRate, , ) =
+            IReserveInterestRateStrategy(reserveData.interestRateStrategyAddress).calculateInterestRates(
+                address(want),
+                uint256(newLiquidity),
+                totalStableDebt,
+                totalVariableDebt,
+                averageStableBorrowRate,
+                reserveFactor
+            );
+
+        return newLiquidityRate / 1e9; // ray to wad
+    }
 }
