@@ -3,9 +3,11 @@ name: ape-aave-lender
 plugins:
   - name: solidity
   - name: vyper
-  - name: hardhat
-  - name: alchemy
   - name: etherscan
+  - name: hardhat
+  - name: foundry
+  - name: alchemy
+  - name: infura
 
 default_ecosystem: ethereum
 dependencies:
