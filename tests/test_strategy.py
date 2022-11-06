@@ -1,4 +1,5 @@
 from ape import reverts
+from ape import Contract
 import pytest
 from utils.constants import REL_ERROR, MAX_INT
 
@@ -253,3 +254,18 @@ def test_withdraw_low_liquidity(
     assert pytest.approx(
         new_debt - 10 ** vault.decimals(), abs=1e3
     ) == atoken.balanceOf(strategy) 
+
+
+def test_apr(asset, atoken, user, create_vault_and_strategy, gov, amount, provide_strategy_with_debt):
+    vault, strategy = create_vault_and_strategy(gov, amount)
+    new_debt = amount
+    provide_strategy_with_debt(gov, strategy, vault, new_debt)
+
+    protocol_data_provider = Contract(strategy.PROTOCOL_DATA_PROVIDER())
+    current_real_apr = int(protocol_data_provider.getReserveData(asset).liquidityRate / int(1e9))
+    current_expected_apr = strategy.aprAfterDebtChange(0)
+    assert pytest.approx(current_real_apr, rel=1e-5) == current_expected_apr
+
+    # TODO: is there a way to re calculate without replicating in python?
+    assert current_real_apr < strategy.aprAfterDebtChange(-int(1e12))
+    assert current_real_apr > strategy.aprAfterDebtChange(int(1e12))
