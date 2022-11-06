@@ -4,6 +4,7 @@ pragma solidity 0.8.14;
 import "./interfaces/IVault.sol";
 import "./BaseStrategy.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
 
 interface ILenderStrategy {
     function aprAfterDebtChange(
@@ -11,7 +12,7 @@ interface ILenderStrategy {
     ) external view returns (uint256 _apr);
 }
 
-contract LenderDebtManager {
+contract LenderDebtManager is Ownable {
     IVault public vault;
     IERC20 public asset;
     address[] public strategies;
@@ -23,7 +24,8 @@ contract LenderDebtManager {
         asset = IERC20(_vault.asset());
     }
 
-    function addStrategy(address _strategy /* onlyAuthorized */) external {
+    function addStrategy(address _strategy) external {
+        // NOTE: if the strategy is added to the vault, it should be added here, so no need for authorizing
         require(vault.strategies(_strategy).activation != 0);
 
         for (uint256 i = 0; i < strategies.length; ++i) {
@@ -33,8 +35,12 @@ contract LenderDebtManager {
         strategies.push(_strategy);
     }
 
-    // TODO: Permissionless remove when not in vault, permissioned when in vault
-    function removeStrategy(address _strategy /* onlyAuthorized */) external {
+    function removeStrategy(address _strategy) external {
+        // TODO: replace with a query to the vault to see if the account is allowed
+        bool _isManager = msg.sender == owner();
+        // Strategy can't be active but an authorized account can force deletion if still active
+        require(vault.strategies(_strategy).activation == 0 || _isManager);
+
         uint256 strategyCount = strategies.length;
         for (uint256 i = 0; i < strategyCount; ++i) {
             if (strategies[i] == _strategy) {
@@ -50,6 +56,8 @@ contract LenderDebtManager {
 
     function updateAllocations() public {
         (uint256 _lowest, , uint256 _highest, ) = estimateAdjustPosition();
+
+        require(_lowest != _highest); // dev: no debt changes
 
         address _lowestStrategy = strategies[_lowest];
         address _highestStrategy = strategies[_highest];
@@ -90,23 +98,23 @@ contract LenderDebtManager {
         // cycle through and see who could take its funds plus want for the highest apr
         _lowestApr = type(uint256).max;
         _lowest = 0;
-        uint256 lowestNav = 0;
+        uint256 lowestCurrentDebt = 0;
         for (uint256 i = 0; i < strategyCount; ++i) {
             ILenderStrategy _strategy = ILenderStrategy(strategies[i]);
-            uint256 _strategyNav = vault
+            uint256 _strategyCurrentDebt = vault
                 .strategies(address(_strategy))
                 .current_debt;
-            if (_strategyNav > 0) {
+            if (_strategyCurrentDebt > 0) {
                 uint256 apr = _strategy.aprAfterDebtChange(0);
                 if (apr < _lowestApr) {
                     _lowestApr = apr;
                     _lowest = i;
-                    lowestNav = _strategyNav;
+                    lowestCurrentDebt = _strategyCurrentDebt;
                 }
             }
         }
 
-        uint256 toAdd = lowestNav + looseAssets;
+        uint256 toAdd = lowestCurrentDebt + looseAssets;
 
         uint256 highestApr = 0;
         _highest = 0;
