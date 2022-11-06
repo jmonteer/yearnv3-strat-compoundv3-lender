@@ -250,15 +250,22 @@ def test_withdraw_low_liquidity(
     assert pytest.approx(10 ** vault.decimals(), REL_ERROR) == asset.balanceOf(vault)
     assert pytest.approx(
         new_debt - 10 ** vault.decimals(), rel=1e-5
-    ) == ctoken.balanceOf(strategy) 
+    ) == ctoken.balanceOf(strategy)
 
 
-def test_apr(asset, ctoken, user, create_vault_and_strategy, gov, amount, provide_strategy_with_debt):
+def test_apr(
+    asset,
+    ctoken,
+    user,
+    create_vault_and_strategy,
+    gov,
+    amount,
+    provide_strategy_with_debt,
+):
     vault, strategy = create_vault_and_strategy(gov, amount)
     new_debt = amount
     provide_strategy_with_debt(gov, strategy, vault, new_debt)
 
-    
     current_utilization = ctoken.getUtilization()
     current_real_apr = ctoken.getSupplyRate(current_utilization) * YEAR
     current_expected_apr = strategy.aprAfterDebtChange(0)

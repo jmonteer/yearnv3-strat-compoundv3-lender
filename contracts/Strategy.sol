@@ -6,10 +6,12 @@ import "@openzeppelin/contracts/utils/math/Math.sol";
 import {IERC20, BaseStrategy} from "BaseStrategy.sol";
 import "interfaces/IVault.sol";
 import {Comet, CometStructs, CometRewards} from "interfaces/CompoundV3.sol";
+
 contract Strategy is BaseStrategy {
     // TODO: add rewards
     Comet public immutable cToken;
     uint256 private SECONDS_PER_YEAR = 365 days;
+
     constructor(
         address _vault,
         string memory _name,
@@ -23,7 +25,8 @@ contract Strategy is BaseStrategy {
         address owner
     ) internal view override returns (uint256) {
         // TODO: may not be accurate due to unaccrued balance in cToken
-        return Math.min(IERC20(asset).balanceOf(address(cToken)), _totalAssets());
+        return
+            Math.min(IERC20(asset).balanceOf(address(cToken)), _totalAssets());
     }
 
     function _freeFunds(
@@ -98,8 +101,10 @@ contract Strategy is BaseStrategy {
         uint256 borrows = cToken.totalBorrow();
         uint256 supply = cToken.totalSupply();
 
-        uint256 newUtilization = borrows * 1e18 / uint256(int256(supply) + delta);
-        uint256 newSupplyRate = cToken.getSupplyRate(newUtilization) * SECONDS_PER_YEAR;
+        uint256 newUtilization = (borrows * 1e18) /
+            uint256(int256(supply) + delta);
+        uint256 newSupplyRate = cToken.getSupplyRate(newUtilization) *
+            SECONDS_PER_YEAR;
         return newSupplyRate;
     }
 }
