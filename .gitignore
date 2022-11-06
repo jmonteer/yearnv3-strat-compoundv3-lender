@@ -141,3 +141,7 @@ node_modules
 .env.sh
 
 *lock*
+
+bin
+pyvenv.cfg
+share
