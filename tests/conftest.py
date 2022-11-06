@@ -1,10 +1,10 @@
 import pytest
-from ape import Contract, accounts
+from ape import Contract, accounts, project
 from utils.constants import MAX_INT, WEEK, ROLES
 
 # this should be the address of the ERC-20 used by the strategy/vault
 ASSET_ADDRESS = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"  # USDC
-AASSET_ADDRESS = "0xBcca60bB61934080951369a648Fb03DF4F96263C"  # AUSDC
+CASSET_ADDRESS = "0xc3d688B66703497DAA19211EEdff47f25384cdc3"  # cUSDCv3
 ASSET_WHALE_ADDRESS = "0x0A59649758aa4d66E25f08Dd01271e891fe52199"  # USDC WHALE
 
 
@@ -36,8 +36,9 @@ def amount(asset):
 
 
 @pytest.fixture(scope="session")
-def atoken():
-    return Contract(AASSET_ADDRESS)
+def ctoken():
+    # NOTE: adding default contract type because it's not verified
+    return Contract(CASSET_ADDRESS, project.Comet.contract_type)
 
 
 @pytest.fixture(scope="session")
@@ -75,7 +76,7 @@ def vault(gov, asset, create_vault):
 @pytest.fixture
 def create_strategy(project, strategist):
     def create_strategy(vault):
-        strategy = strategist.deploy(project.Strategy, vault.address, "strategy_name")
+        strategy = strategist.deploy(project.Strategy, vault.address, "strategy_name", CASSET_ADDRESS)
         return strategy
 
     yield create_strategy
@@ -121,15 +122,5 @@ def provide_strategy_with_debt():
 @pytest.fixture
 def user_interaction(strategy, vault, deposit_into_vault):
     def user_interaction():
-        # Due to the fact that Aave doesn't update internal state till new txs are
-        # created, we force it by creating a withdraw
-        awhale = "0x13873fa4B7771F3492825B00D1c37301fF41C348"
-        lp = Contract("0x7d2768dE32b0b80b7a3454c06BdAc94A69DDc7A9")
-        lp.withdraw(
-            "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-            int(10**6),
-            awhale,
-            sender=accounts[awhale],
-        )
-
+        return
     yield user_interaction

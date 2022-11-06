@@ -2,7 +2,7 @@ from enum import IntFlag
 
 DAY = 86400
 WEEK = 7 * DAY
-YEAR = 31_556_952  # same value used in vault
+YEAR = 365 * 24 * 3600
 MAX_INT = 2**256 - 1
 ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 

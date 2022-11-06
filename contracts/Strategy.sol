@@ -1,37 +1,29 @@
 // SPDX-License-Identifier: AGPL-3.0
-
 pragma solidity 0.8.14;
 
 import "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {IERC20, BaseStrategy} from "BaseStrategy.sol";
-
-import "./interfaces/aave/ILendingPool.sol";
-import "./interfaces/aave/ILendingPoolAddressesProvider.sol";
-import "./interfaces/aave/IProtocolDataProvider.sol";
-import "./interfaces/aave/IReserveInterestRateStrategy.sol";
-import "./libraries//aave/DataTypes.sol";
-
+import "interfaces/IVault.sol";
+import {Comet, CometStructs, CometRewards} from "interfaces/CompoundV3.sol";
 contract Strategy is BaseStrategy {
-    IProtocolDataProvider public constant PROTOCOL_DATA_PROVIDER =
-        IProtocolDataProvider(0x057835Ad21a177dbdd3090bB1CAE03EaCF78Fc6d);
-
-    address public immutable aToken;
-
+    // TODO: add rewards
+    Comet public immutable cToken;
+    uint256 private SECONDS_PER_YEAR = 365 days;
     constructor(
         address _vault,
-        string memory _name
+        string memory _name,
+        Comet _cToken
     ) BaseStrategy(_vault, _name) {
-        (address _aToken, , ) = PROTOCOL_DATA_PROVIDER.getReserveTokensAddresses(
-            asset
-        );
-        aToken = _aToken;
+        cToken = _cToken;
+        require(cToken.baseToken() == IVault(vault).asset());
     }
 
     function _maxWithdraw(
         address owner
     ) internal view override returns (uint256) {
-        return Math.min(IERC20(asset).balanceOf(aToken), _totalAssets());
+        // TODO: may not be accurate due to unaccrued balance in cToken
+        return Math.min(IERC20(asset).balanceOf(address(cToken)), _totalAssets());
     }
 
     function _freeFunds(
@@ -42,17 +34,17 @@ contract Strategy is BaseStrategy {
             // we have enough idle assets for the vault to take
             _amountFreed = _amount;
         } else {
+            // NOTE: we need the balance updated
+            cToken.accrueAccount(address(this));
             // We need to take from Aave enough to reach _amount
             // Balance of
             // We run with 'unchecked' as we are safe from underflow
             unchecked {
-                _withdrawFromAave(
-                    Math.min(_amount - _idleAmount, balanceOfAToken())
+                _withdrawFromComet(
+                    Math.min(_amount - _idleAmount, balanceOfCToken())
                 );
             }
             _amountFreed = balanceOfAsset();
-
-
         }
     }
 
@@ -65,25 +57,22 @@ contract Strategy is BaseStrategy {
     }
 
     function _totalAssets() internal view override returns (uint256) {
-        return balanceOfAsset() + balanceOfAToken();
+        return balanceOfAsset() + balanceOfCToken();
     }
 
     function _invest() internal override {
         uint256 _availableToInvest = balanceOfAsset();
-        require(_availableToInvest > 0, "no funds to invest");
-        _depositToAave(_availableToInvest);
+        _depositToComet(_availableToInvest);
     }
 
-    function _depositToAave(uint256 amount) internal {
-        ILendingPool lp = _lendingPool();
-        _checkAllowance(address(lp), asset, amount);
-        lp.deposit(asset, amount, address(this), 0);
+    function _withdrawFromComet(uint256 _amount) internal {
+        cToken.withdraw(address(asset), _amount);
     }
 
-    function _withdrawFromAave(uint256 amount) internal {
-        ILendingPool lp = _lendingPool();
-        _checkAllowance(address(lp), aToken, amount);
-        lp.withdraw(asset, amount, address(this));
+    function _depositToComet(uint256 _amount) internal {
+        Comet _cToken = cToken;
+        _checkAllowance(address(_cToken), asset, _amount);
+        _cToken.supply(address(asset), _amount);
     }
 
     function _checkAllowance(
@@ -97,15 +86,8 @@ contract Strategy is BaseStrategy {
         }
     }
 
-    function _lendingPool() internal view returns (ILendingPool) {
-        return
-            ILendingPool(
-                PROTOCOL_DATA_PROVIDER.ADDRESSES_PROVIDER().getLendingPool()
-            );
-    }
-
-    function balanceOfAToken() internal view returns (uint256) {
-        return IERC20(aToken).balanceOf(address(this));
+    function balanceOfCToken() internal view returns (uint256) {
+        return IERC20(cToken).balanceOf(address(this));
     }
 
     function balanceOfAsset() internal view returns (uint256) {
@@ -113,39 +95,11 @@ contract Strategy is BaseStrategy {
     }
 
     function aprAfterDebtChange(int256 delta) external view returns (uint256) {
-        // i need to calculate new supplyRate after Deposit (when deposit has not been done yet)
-        DataTypes.ReserveData memory reserveData = _lendingPool()
-            .getReserveData(address(asset));
+        uint256 borrows = cToken.totalBorrow();
+        uint256 supply = cToken.totalSupply();
 
-        (
-            uint256 availableLiquidity,
-            uint256 totalStableDebt,
-            uint256 totalVariableDebt,
-            ,
-            ,
-            ,
-            uint256 averageStableBorrowRate,
-            ,
-            ,
-
-        ) = PROTOCOL_DATA_PROVIDER.getReserveData(address(asset));
-
-        int256 newLiquidity = int256(availableLiquidity) + delta;
-
-        (, , , , uint256 reserveFactor, , , , , ) = PROTOCOL_DATA_PROVIDER
-            .getReserveConfigurationData(address(asset));
-
-        (uint256 newLiquidityRate, , ) = IReserveInterestRateStrategy(
-            reserveData.interestRateStrategyAddress
-        ).calculateInterestRates(
-                address(asset),
-                uint256(newLiquidity),
-                totalStableDebt,
-                totalVariableDebt,
-                averageStableBorrowRate,
-                reserveFactor
-            );
-
-        return newLiquidityRate / 1e9; // ray to wad
+        uint256 newUtilization = borrows * 1e18 / uint256(int256(supply) + delta);
+        uint256 newSupplyRate = cToken.getSupplyRate(newUtilization) * SECONDS_PER_YEAR;
+        return newSupplyRate;
     }
 }
