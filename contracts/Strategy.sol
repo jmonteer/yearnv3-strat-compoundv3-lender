@@ -5,12 +5,34 @@ import "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {IERC20, BaseStrategy} from "BaseStrategy.sol";
 import "interfaces/IVault.sol";
+import {ISwapRouter} from "interfaces/ISwapRouter.sol";
 import {Comet, CometStructs, CometRewards} from "interfaces/CompoundV3.sol";
 
 contract Strategy is BaseStrategy {
-    // TODO: add rewards
+    //For apr calculations
+    uint256 private constant DAYS_PER_YEAR = 365;
+    uint256 private constant SECONDS_PER_DAY = 60 * 60 * 24;
+    uint256 private constant SECONDS_PER_YEAR = 365 days;
+    uint256 internal immutable BASE_MANTISSA;
+    uint256 internal immutable BASE_INDEX_SCALE;
+
+    //Rewards stuff
+    //Uniswap v3 router
+    ISwapRouter internal constant router =
+        ISwapRouter(0xE592427A0AEce92De3Edee1F18E0157C05861564);
+    //Fees for the V3 pools if the supply is incentivized
+    uint24 public compToEthFee;
+    uint24 public ethToAssetFee;
+    //Reward token
+    address internal constant comp = 
+        0xc00e94Cb662C3520282E6f5717214004A7f26888;
+    address internal constant weth = 
+        0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
+        
+    CometRewards public constant rewardsContract = 
+        CometRewards(0x1B0e765F6224C21223AeA2af16c1C46E38885a40); 
+
     Comet public immutable cToken;
-    uint256 private SECONDS_PER_YEAR = 365 days;
 
     constructor(
         address _vault,
@@ -19,6 +41,17 @@ contract Strategy is BaseStrategy {
     ) BaseStrategy(_vault, _name) {
         cToken = _cToken;
         require(cToken.baseToken() == IVault(vault).asset());
+
+        BASE_MANTISSA = cToken.baseScale();
+        BASE_INDEX_SCALE = cToken.baseIndexScale();
+    }
+
+    //These currently default to 0.
+    //Will need to be manually set if asset is incentized before any harvests
+    function setUniFees(uint24 _compToEth, uint24 _ethToAsset) external {
+        // TODO: Needs a modifier to protect it
+        compToEthFee = _compToEth;
+        ethToAssetFee = _ethToAsset;
     }
 
     function _maxWithdraw(
@@ -105,6 +138,114 @@ contract Strategy is BaseStrategy {
             uint256(int256(supply) + delta);
         uint256 newSupplyRate = cToken.getSupplyRate(newUtilization) *
             SECONDS_PER_YEAR;
-        return newSupplyRate;
+        uint256 rewardRate = getRewardAprForSupplyBase(delta);
+        return newSupplyRate + rewardRate;
+    }
+
+    function getRewardAprForSupplyBase(int256 newAmount) public view returns (uint256) {
+        //SupplyRewardApr = (rewardTokenPriceInUsd * rewardToSupplierssPerDay / (baseTokenTotalSupply * baseTokenPriceInUsd)) * DAYS_PER_YEAR;
+        unchecked {
+            uint256 rewardToSuppliersPerDay =  cToken.baseTrackingSupplySpeed() * SECONDS_PER_DAY * BASE_INDEX_SCALE / BASE_MANTISSA;
+            if(rewardToSuppliersPerDay == 0) return 0;
+            return (getCompoundPrice(getPriceFeedAddress(comp)) * 
+                        rewardToSuppliersPerDay / 
+                            (uint256(int256(cToken.totalSupply()) + newAmount) * 
+                                getCompoundPrice(cToken.baseTokenPriceFeed()))) * 
+                                    DAYS_PER_YEAR;
+        }
+    }
+
+    function getPriceFeedAddress(address asset) internal view returns (address) {
+        return cToken.getAssetInfoByAddress(asset).priceFeed;
+    }
+
+    function getCompoundPrice(address singleAssetPriceFeed) internal view returns (uint) {
+        return cToken.getPrice(singleAssetPriceFeed);
+    }
+
+    function getRewardsOwed() public view returns (uint256) {
+        CometStructs.RewardConfig memory config = rewardsContract.rewardConfig(address(cToken));
+        uint256 accrued = cToken.baseTrackingAccrued(address(this));
+        if (config.shouldUpscale) {
+            accrued *= config.rescaleFactor;
+        } else {
+            accrued /= config.rescaleFactor;
+        }
+        uint256 claimed = rewardsContract.rewardsClaimed(address(cToken), address(this));
+
+        return accrued > claimed ? accrued - claimed : 0;
+    }
+
+    /*
+    * External function that Claims the reward tokens due to this contract address
+    */
+    function claimRewards() external {
+        //TODO add modifier for keepers
+        _claimRewards();
+    }
+
+    /*
+    * Claims the reward tokens due to this contract address
+    */
+    function _claimRewards() internal {
+        rewardsContract.claim(address(cToken), address(this), true);
+    }
+
+    //TODO add modifier for keepers
+    function harvest() external {
+        _claimRewards();
+
+        _disposeOfComp();
+
+        uint256 _availableToInvest = balanceOfAsset();
+        if(_availableToInvest > 0) {
+            _depositToComet(_availableToInvest);
+        }
+    }
+
+     function _disposeOfComp() internal {
+        uint256 _comp = IERC20(comp).balanceOf(address(this));
+
+        if (_comp > 0) {
+            _checkAllowance(address(router), comp, _comp);
+
+            if(address(asset) == weth) {
+                ISwapRouter.ExactInputSingleParams memory params =
+                    ISwapRouter.ExactInputSingleParams(
+                        comp, // tokenIn
+                        address(asset), // tokenOut
+                        compToEthFee, // comp-eth fee
+                        address(this), // recipient
+                        block.timestamp, // deadline
+                        _comp, // amountIn
+                        0, // amountOut
+                        0 // sqrtPriceLimitX96
+                    );
+
+                router.exactInputSingle(params);
+            
+            } else {
+                bytes memory path =
+                    abi.encodePacked(
+                        comp, // comp-ETH
+                        compToEthFee,
+                        weth, // ETH-asset
+                        ethToAssetFee,
+                        address(asset)
+                    );
+
+                // Proceeds from Comp are not subject to minExpectedSwapPercentage
+                // so they could get sandwiched if we end up in an uncle block
+                router.exactInput(
+                    ISwapRouter.ExactInputParams(
+                        path,
+                        address(this),
+                        block.timestamp,
+                        _comp,
+                        0
+                    )
+                );
+            }
+        }
     }
 }
