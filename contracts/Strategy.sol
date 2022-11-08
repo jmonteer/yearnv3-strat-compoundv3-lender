@@ -24,13 +24,11 @@ contract Strategy is BaseStrategy {
     uint24 public compToEthFee;
     uint24 public ethToAssetFee;
     //Reward token
-    address internal constant comp = 
-        0xc00e94Cb662C3520282E6f5717214004A7f26888;
-    address internal constant weth = 
-        0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
-        
-    CometRewards public constant rewardsContract = 
-        CometRewards(0x1B0e765F6224C21223AeA2af16c1C46E38885a40); 
+    address internal constant comp = 0xc00e94Cb662C3520282E6f5717214004A7f26888;
+    address internal constant weth = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
+
+    CometRewards public constant rewardsContract =
+        CometRewards(0x1B0e765F6224C21223AeA2af16c1C46E38885a40);
 
     Comet public immutable cToken;
 
@@ -142,51 +140,66 @@ contract Strategy is BaseStrategy {
         return newSupplyRate + rewardRate;
     }
 
-    function getRewardAprForSupplyBase(int256 newAmount) public view returns (uint256) {
+    function getRewardAprForSupplyBase(
+        int256 newAmount
+    ) public view returns (uint256) {
         //SupplyRewardApr = (rewardTokenPriceInUsd * rewardToSupplierssPerDay / (baseTokenTotalSupply * baseTokenPriceInUsd)) * DAYS_PER_YEAR;
         unchecked {
-            uint256 rewardToSuppliersPerDay =  cToken.baseTrackingSupplySpeed() * SECONDS_PER_DAY * BASE_INDEX_SCALE / BASE_MANTISSA;
-            if(rewardToSuppliersPerDay == 0) return 0;
-            return (getCompoundPrice(getPriceFeedAddress(comp)) * 
-                        rewardToSuppliersPerDay / 
-                            (uint256(int256(cToken.totalSupply()) + newAmount) * 
-                                getCompoundPrice(cToken.baseTokenPriceFeed()))) * 
-                                    DAYS_PER_YEAR;
+            uint256 rewardToSuppliersPerDay = (cToken
+                .baseTrackingSupplySpeed() *
+                SECONDS_PER_DAY *
+                BASE_INDEX_SCALE) / BASE_MANTISSA;
+            if (rewardToSuppliersPerDay == 0) return 0;
+            return
+                ((getCompoundPrice(getPriceFeedAddress(comp)) *
+                    rewardToSuppliersPerDay) /
+                    (uint256(int256(cToken.totalSupply()) + newAmount) *
+                        getCompoundPrice(cToken.baseTokenPriceFeed()))) *
+                DAYS_PER_YEAR;
         }
     }
 
-    function getPriceFeedAddress(address asset) internal view returns (address) {
+    function getPriceFeedAddress(
+        address asset
+    ) internal view returns (address) {
         return cToken.getAssetInfoByAddress(asset).priceFeed;
     }
 
-    function getCompoundPrice(address singleAssetPriceFeed) internal view returns (uint) {
+    function getCompoundPrice(
+        address singleAssetPriceFeed
+    ) internal view returns (uint) {
         return cToken.getPrice(singleAssetPriceFeed);
     }
 
     function getRewardsOwed() public view returns (uint256) {
-        CometStructs.RewardConfig memory config = rewardsContract.rewardConfig(address(cToken));
+        CometStructs.RewardConfig memory config = rewardsContract.rewardConfig(
+            address(cToken)
+        );
         uint256 accrued = cToken.baseTrackingAccrued(address(this));
         if (config.shouldUpscale) {
             accrued *= config.rescaleFactor;
         } else {
             accrued /= config.rescaleFactor;
         }
-        uint256 claimed = rewardsContract.rewardsClaimed(address(cToken), address(this));
+        uint256 claimed = rewardsContract.rewardsClaimed(
+            address(cToken),
+            address(this)
+        );
 
         return accrued > claimed ? accrued - claimed : 0;
     }
 
     /*
-    * External function that Claims the reward tokens due to this contract address
-    */
+     * External function that Claims the reward tokens due to this contract address
+     */
     function claimRewards() external {
         //TODO add modifier for keepers
         _claimRewards();
     }
 
     /*
-    * Claims the reward tokens due to this contract address
-    */
+     * Claims the reward tokens due to this contract address
+     */
     function _claimRewards() internal {
         rewardsContract.claim(address(cToken), address(this), true);
     }
@@ -198,20 +211,20 @@ contract Strategy is BaseStrategy {
         _disposeOfComp();
 
         uint256 _availableToInvest = balanceOfAsset();
-        if(_availableToInvest > 0) {
+        if (_availableToInvest > 0) {
             _depositToComet(_availableToInvest);
         }
     }
 
-     function _disposeOfComp() internal {
+    function _disposeOfComp() internal {
         uint256 _comp = IERC20(comp).balanceOf(address(this));
 
         if (_comp > 0) {
             _checkAllowance(address(router), comp, _comp);
 
-            if(address(asset) == weth) {
-                ISwapRouter.ExactInputSingleParams memory params =
-                    ISwapRouter.ExactInputSingleParams(
+            if (address(asset) == weth) {
+                ISwapRouter.ExactInputSingleParams memory params = ISwapRouter
+                    .ExactInputSingleParams(
                         comp, // tokenIn
                         address(asset), // tokenOut
                         compToEthFee, // comp-eth fee
@@ -223,16 +236,14 @@ contract Strategy is BaseStrategy {
                     );
 
                 router.exactInputSingle(params);
-            
             } else {
-                bytes memory path =
-                    abi.encodePacked(
-                        comp, // comp-ETH
-                        compToEthFee,
-                        weth, // ETH-asset
-                        ethToAssetFee,
-                        address(asset)
-                    );
+                bytes memory path = abi.encodePacked(
+                    comp, // comp-ETH
+                    compToEthFee,
+                    weth, // ETH-asset
+                    ethToAssetFee,
+                    address(asset)
+                );
 
                 // Proceeds from Comp are not subject to minExpectedSwapPercentage
                 // so they could get sandwiched if we end up in an uncle block
