@@ -275,9 +275,10 @@ def test_apr(
     assert current_real_apr < strategy.aprAfterDebtChange(-int(1e12))
     assert current_real_apr > strategy.aprAfterDebtChange(int(1e12))
 
-    #Supply is not curretly incentivized
+    # Supply is not curretly incentivized
     assert strategy.getRewardAprForSupplyBase(0) == 0
     assert strategy.getRewardsOwed() == 0
+
 
 def test_harvest(
     asset,
@@ -293,8 +294,8 @@ def test_harvest(
     provide_strategy_with_debt(gov, strategy, vault, new_debt)
 
     before_bal = strategy.totalAssets()
-    #harvest function should still work and not revert without any rewards
+    # harvest function should still work and not revert without any rewards
     strategy.harvest(sender=gov)
 
-    #no rewards should be claimed but the call accrues the account so we should be slightly higher
+    # no rewards should be claimed but the call accrues the account so we should be slightly higher
     assert strategy.totalAssets() > before_bal
