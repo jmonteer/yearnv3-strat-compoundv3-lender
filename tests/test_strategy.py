@@ -274,3 +274,27 @@ def test_apr(
     # TODO: is there a way to re calculate without replicating in python?
     assert current_real_apr < strategy.aprAfterDebtChange(-int(1e12))
     assert current_real_apr > strategy.aprAfterDebtChange(int(1e12))
+
+    #Supply is not curretly incentivized
+    assert strategy.getRewardAprForSupplyBase(0) == 0
+    assert strategy.getRewardsOwed() == 0
+
+def test_harvest(
+    asset,
+    ctoken,
+    user,
+    create_vault_and_strategy,
+    gov,
+    amount,
+    provide_strategy_with_debt,
+):
+    vault, strategy = create_vault_and_strategy(gov, amount)
+    new_debt = amount
+    provide_strategy_with_debt(gov, strategy, vault, new_debt)
+
+    before_bal = strategy.totalAssets()
+    #harvest function should still work and not revert without any rewards
+    strategy.harvest(sender=gov)
+
+    #no rewards should be claimed but the call accrues the account so we should be slightly higher
+    assert strategy.totalAssets() > before_bal
