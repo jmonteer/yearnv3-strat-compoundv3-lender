@@ -48,7 +48,10 @@ contract Strategy is BaseStrategy, Ownable {
         ethToAssetFee = 500;
     }
 
-    function setUniFees(uint24 _compToEth, uint24 _ethToAsset) external onlyOwner {
+    function setUniFees(
+        uint24 _compToEth,
+        uint24 _ethToAsset
+    ) external onlyOwner {
         compToEthFee = _compToEth;
         ethToAssetFee = _ethToAsset;
     }
