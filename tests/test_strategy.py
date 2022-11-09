@@ -286,6 +286,7 @@ def test_harvest(
     user,
     create_vault_and_strategy,
     gov,
+    strategist,
     amount,
     provide_strategy_with_debt,
 ):
@@ -294,8 +295,9 @@ def test_harvest(
     provide_strategy_with_debt(gov, strategy, vault, new_debt)
 
     before_bal = strategy.totalAssets()
+
     # harvest function should still work and not revert without any rewards
-    strategy.harvest(sender=gov)
+    strategy.harvest(sender=strategist)
 
     # no rewards should be claimed but the call accrues the account so we should be slightly higher
     assert strategy.totalAssets() > before_bal

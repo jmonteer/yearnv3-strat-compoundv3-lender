@@ -2,13 +2,14 @@
 pragma solidity 0.8.14;
 
 import "@openzeppelin/contracts/utils/math/Math.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
 
 import {IERC20, BaseStrategy} from "BaseStrategy.sol";
 import "interfaces/IVault.sol";
 import {ISwapRouter} from "interfaces/ISwapRouter.sol";
 import {Comet, CometStructs, CometRewards} from "interfaces/CompoundV3.sol";
 
-contract Strategy is BaseStrategy {
+contract Strategy is BaseStrategy, Ownable {
     //For apr calculations
     uint256 private constant DAYS_PER_YEAR = 365;
     uint256 private constant SECONDS_PER_DAY = 60 * 60 * 24;
@@ -47,8 +48,7 @@ contract Strategy is BaseStrategy {
         ethToAssetFee = 500;
     }
 
-    function setUniFees(uint24 _compToEth, uint24 _ethToAsset) external {
-        // TODO: Needs a modifier to protect it
+    function setUniFees(uint24 _compToEth, uint24 _ethToAsset) external onlyOwner {
         compToEthFee = _compToEth;
         ethToAssetFee = _ethToAsset;
     }
@@ -193,8 +193,7 @@ contract Strategy is BaseStrategy {
     /*
      * External function that Claims the reward tokens due to this contract address
      */
-    function claimRewards() external {
-        //TODO add modifier for keepers
+    function claimRewards() external onlyOwner {
         _claimRewards();
     }
 
@@ -206,7 +205,7 @@ contract Strategy is BaseStrategy {
     }
 
     //TODO add modifier for keepers
-    function harvest() external {
+    function harvest() external onlyOwner {
         _claimRewards();
 
         _disposeOfComp();
