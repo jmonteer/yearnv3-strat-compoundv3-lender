@@ -1,7 +1,5 @@
 eth-ape>=0.5.0,<0.6.0
-ape-alchemy>=0.5.0,<0.6.0
 ape-etherscan>=0.5.0,<0.6.0
-ape-foundry>=0.5.0,<0.6.0
 ape-hardhat>=0.5.0,<0.6.0
 ape-infura>=0.5.0,<0.6.0
 ape-solidity>=0.5.0,<0.6.0
