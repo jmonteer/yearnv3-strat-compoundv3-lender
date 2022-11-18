@@ -276,11 +276,12 @@ def test_apr(
     assert current_real_apr > strategy.aprAfterDebtChange(int(1e12))
 
 
-def test_withdraw_mev_bot(asset, user, create_vault_and_strategy, gov, amount, provide_strategy_with_debt):
+def test_withdraw_mev_bot(
+    asset, user, create_vault_and_strategy, gov, amount, provide_strategy_with_debt
+):
     vault, strategy = create_vault_and_strategy(gov, amount)
     new_debt = amount
     provide_strategy_with_debt(gov, strategy, vault, new_debt)
 
     with reverts("not owner"):
         strategy.withdraw(strategy.maxWithdraw(vault), user, user, sender=user)
-
