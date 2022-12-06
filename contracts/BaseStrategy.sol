@@ -3,6 +3,7 @@
 pragma solidity 0.8.14;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import "./interfaces/IVault.sol";
 
@@ -60,9 +61,10 @@ abstract contract BaseStrategy {
         return _maxWithdraw(owner);
     }
 
-    function _maxWithdraw(
-        address owner
-    ) internal view virtual returns (uint256 withdraw_amount) {}
+    function tend() external {
+        require(msg.sender == vault, "not owner");
+        return _tend();
+    }
 
     function withdraw(
         uint256 amount,
@@ -72,20 +74,24 @@ abstract contract BaseStrategy {
         require(msg.sender == vault && msg.sender == receiver, "not owner");
         require(amount <= maxWithdraw(vault), "withdraw more than max");
 
-        uint256 amount_withdrawn = _withdraw(amount, receiver, owner);
-        IERC20(asset).transfer(receiver, amount_withdrawn);
-        return amount_withdrawn;
+        uint256 amountWithdrawn = _withdraw(amount, receiver, owner);
+        IERC20(asset).transfer(receiver, amountWithdrawn);
+        return amountWithdrawn;
     }
+
+    function _maxWithdraw(
+        address owner
+    ) internal view virtual returns (uint256 withdraw_amount);
 
     function _withdraw(
         uint256 amount,
         address receiver,
         address owner
-    ) internal virtual returns (uint256 withdraw_amount) {}
+    ) internal virtual returns (uint256 withdrawAmount);
 
-    function _invest() internal virtual {}
+    function _invest() internal virtual;
 
-    function _totalAssets() internal view virtual returns (uint256) {
-        return IERC20(asset).balanceOf(address(this));
-    }
+    function _totalAssets() internal view virtual returns (uint256);
+
+    function _tend() internal virtual;
 }
