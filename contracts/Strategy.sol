@@ -19,7 +19,6 @@ contract Strategy is BaseStrategy, Ownable {
     uint256 internal constant DAYS_PER_YEAR = 365;
     uint256 internal constant SECONDS_PER_DAY = 60 * 60 * 24;
 
-
     //Uniswap v3 router
     ISwapRouter internal constant router =
         ISwapRouter(0xE592427A0AEce92De3Edee1F18E0157C05861564);
@@ -27,15 +26,13 @@ contract Strategy is BaseStrategy, Ownable {
     uint24 public compToEthFee;
     uint24 public ethToWantFee;
 
-    address internal constant comp = 
-        0xc00e94Cb662C3520282E6f5717214004A7f26888;
+    address internal constant comp = 0xc00e94Cb662C3520282E6f5717214004A7f26888;
 
-    address internal constant weth = 
-        0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
+    address internal constant weth = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
 
     address public tradeFactory;
 
-    CometRewards public constant rewardsContract = 
+    CometRewards public constant rewardsContract =
         CometRewards(0x1B0e765F6224C21223AeA2af16c1C46E38885a40);
 
     uint internal immutable BASE_MANTISSA;
@@ -61,19 +58,23 @@ contract Strategy is BaseStrategy, Ownable {
 
     //These will default to 0.
     //Will need to be manually set if asset is incentized before any harvests
-    function setUniFees(uint24 _compToEth, uint24 _ethToWant) external onlyOwner {
+    function setUniFees(
+        uint24 _compToEth,
+        uint24 _ethToWant
+    ) external onlyOwner {
         compToEthFee = _compToEth;
         ethToWantFee = _ethToWant;
     }
 
-    function setMinRewardAmounts(uint256 _minCompToSell, uint256 _minRewardToHavest) external onlyOwner{
+    function setMinRewardAmounts(
+        uint256 _minCompToSell,
+        uint256 _minRewardToHavest
+    ) external onlyOwner {
         minCompToSell = _minCompToSell;
         minRewardToHarvest = _minRewardToHavest;
     }
 
-    function _maxWithdraw(
-        address
-    ) internal view override returns (uint256) {
+    function _maxWithdraw(address) internal view override returns (uint256) {
         // TODO: may not be accurate due to unaccrued balance in cToken
         return
             Math.min(IERC20(asset).balanceOf(address(cToken)), _totalAssets());
@@ -160,20 +161,28 @@ contract Strategy is BaseStrategy, Ownable {
         uint256 newSupplyRate = cToken.getSupplyRate(newUtilization) *
             SECONDS_PER_YEAR;
 
-        uint rewardRate = getRewardAprForSupplyBase(getPriceFeedAddress(comp), delta);
+        uint rewardRate = getRewardAprForSupplyBase(
+            getPriceFeedAddress(comp),
+            delta
+        );
 
         return newSupplyRate + rewardRate;
     }
 
     function getRewardsOwed() public view returns (uint) {
-        CometStructs.RewardConfig memory config = rewardsContract.rewardConfig(address(cToken));
+        CometStructs.RewardConfig memory config = rewardsContract.rewardConfig(
+            address(cToken)
+        );
         uint256 accrued = cToken.baseTrackingAccrued(address(this));
         if (config.shouldUpscale) {
             accrued *= config.rescaleFactor;
         } else {
             accrued /= config.rescaleFactor;
         }
-        uint256 claimed = rewardsContract.rewardsClaimed(address(cToken), address(this));
+        uint256 claimed = rewardsContract.rewardsClaimed(
+            address(cToken),
+            address(this)
+        );
 
         return accrued > claimed ? accrued - claimed : 0;
     }
@@ -185,11 +194,13 @@ contract Strategy is BaseStrategy, Ownable {
         _invest();
     }
 
-    function _tendTrigger() internal override view returns(bool) {
-        if(!isBaseFeeAcceptable()) return false;
+    function _tendTrigger() internal view override returns (bool) {
+        if (!isBaseFeeAcceptable()) return false;
 
-        if(getRewardsOwed() + IERC20(comp).balanceOf(address(this)) > minRewardToHarvest) return true;
-
+        if (
+            getRewardsOwed() + IERC20(comp).balanceOf(address(this)) >
+            minRewardToHarvest
+        ) return true;
     }
 
     function _claimCometRewards() internal {
@@ -198,15 +209,15 @@ contract Strategy is BaseStrategy, Ownable {
 
     function _sellRewards() internal {
         //check for Trade Factory implementation or that Uni fees are not set
-        if(tradeFactory != address(0) || compToEthFee == 0) return;
+        if (tradeFactory != address(0) || compToEthFee == 0) return;
 
         uint256 _comp = IERC20(comp).balanceOf(address(this));
 
         if (_comp > minCompToSell) {
             _checkAllowance(address(router), comp, _comp);
-            if(address(asset) == weth) {
-                ISwapRouter.ExactInputSingleParams memory params =
-                    ISwapRouter.ExactInputSingleParams(
+            if (address(asset) == weth) {
+                ISwapRouter.ExactInputSingleParams memory params = ISwapRouter
+                    .ExactInputSingleParams(
                         comp, // tokenIn
                         address(asset), // tokenOut
                         compToEthFee, // comp-eth fee
@@ -218,16 +229,14 @@ contract Strategy is BaseStrategy, Ownable {
                     );
 
                 router.exactInputSingle(params);
-            
             } else {
-                bytes memory path =
-                    abi.encodePacked(
-                        comp, // comp-ETH
-                        compToEthFee,
-                        weth, // ETH-asset
-                        ethToWantFee,
-                        address(asset)
-                    );
+                bytes memory path = abi.encodePacked(
+                    comp, // comp-ETH
+                    compToEthFee,
+                    weth, // ETH-asset
+                    ethToWantFee,
+                    address(asset)
+                );
 
                 // Proceeds from Comp are not subject to minExpectedSwapPercentage
                 // so they could get sandwiched if we end up in an uncle block
@@ -245,29 +254,40 @@ contract Strategy is BaseStrategy, Ownable {
     }
 
     /*
-    * Get the current reward for supplying APR in Compound III
-    * @param rewardTokenPriceFeed The address of the reward token (e.g. COMP) price feed
-    * @param newAmount Any amount that will be added to the total supply in a deposit
-    * @return The reward APR in USD as a decimal scaled up by 1e18
-    */
-    function getRewardAprForSupplyBase(address rewardTokenPriceFeed, int newAmount) public view returns (uint) {
-        uint rewardToSuppliersPerDay = cToken.baseTrackingSupplySpeed() * SECONDS_PER_DAY * BASE_INDEX_SCALE / BASE_MANTISSA;
-        if(rewardToSuppliersPerDay == 0) return 0;
+     * Get the current reward for supplying APR in Compound III
+     * @param rewardTokenPriceFeed The address of the reward token (e.g. COMP) price feed
+     * @param newAmount Any amount that will be added to the total supply in a deposit
+     * @return The reward APR in USD as a decimal scaled up by 1e18
+     */
+    function getRewardAprForSupplyBase(
+        address rewardTokenPriceFeed,
+        int newAmount
+    ) public view returns (uint) {
+        uint rewardToSuppliersPerDay = (cToken.baseTrackingSupplySpeed() *
+            SECONDS_PER_DAY *
+            BASE_INDEX_SCALE) / BASE_MANTISSA;
+        if (rewardToSuppliersPerDay == 0) return 0;
 
         uint rewardTokenPriceInUsd = getCompoundPrice(rewardTokenPriceFeed);
         uint assetPriceInUsd = getCompoundPrice(cToken.baseTokenPriceFeed());
-        uint assetTotalSupply = uint256(int256(cToken.totalSupply()) + newAmount);
-        return rewardTokenPriceInUsd * rewardToSuppliersPerDay / (assetTotalSupply * assetPriceInUsd) * DAYS_PER_YEAR;
+        uint assetTotalSupply = uint256(
+            int256(cToken.totalSupply()) + newAmount
+        );
+        return
+            ((rewardTokenPriceInUsd * rewardToSuppliersPerDay) /
+                (assetTotalSupply * assetPriceInUsd)) * DAYS_PER_YEAR;
     }
 
     function getPriceFeedAddress(address asset) public view returns (address) {
-        if(asset == cToken.baseToken()) {
+        if (asset == cToken.baseToken()) {
             return cToken.baseTokenPriceFeed();
         }
         return cToken.getAssetInfoByAddress(asset).priceFeed;
     }
 
-    function getCompoundPrice(address singleAssetPriceFeed) public view returns (uint) {
+    function getCompoundPrice(
+        address singleAssetPriceFeed
+    ) public view returns (uint) {
         return cToken.getPrice(singleAssetPriceFeed);
     }
 
@@ -282,7 +302,7 @@ contract Strategy is BaseStrategy, Ownable {
 
         IERC20(comp).safeApprove(_tradeFactory, type(uint256).max);
         tf.enable(comp, address(asset));
-        
+
         tradeFactory = _tradeFactory;
     }
 

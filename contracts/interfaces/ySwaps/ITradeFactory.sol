@@ -4,5 +4,6 @@ pragma solidity >=0.6.12;
 
 interface ITradeFactory {
     function enable(address, address) external;
+
     function disable(address, address) external;
 }
