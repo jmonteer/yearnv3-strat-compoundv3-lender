@@ -1,4 +1,4 @@
-from ape import reverts
+from ape import reverts, chain, Contract, accounts
 import pytest
 from utils.constants import REL_ERROR, MAX_INT, YEAR
 
@@ -285,3 +285,26 @@ def test_withdraw_mev_bot(
 
     with reverts("not owner"):
         strategy.withdraw(strategy.maxWithdraw(vault), user, user, sender=user)
+
+
+def test_rewards(
+    asset, user, create_vault_and_strategy, gov, amount, provide_strategy_with_debt
+):
+    vault, strategy = create_vault_and_strategy(gov, amount)
+    new_debt = amount
+    assert strategy.getRewardsOwed() == 0
+    provide_strategy_with_debt(gov, strategy, vault, new_debt)
+
+    chain.mine(1000, timestamp=chain.pending_timestamp + 14 * 24 * 3600)
+
+    # rewards are off so we check we can sell
+    comp_whale = accounts["0xf977814e90da44bfa03b6295a0616a897441acec"]
+    # airdrop comp to strategy and be sure it can sell them
+    comp = Contract("0xc00e94Cb662C3520282E6f5717214004A7f26888")
+    comp.transfer(strategy, int(100e18), sender=comp_whale)
+
+    strategy.setUniFees(3000, 3000, sender=accounts[strategy.owner()])
+    assets_pre = strategy.totalAssets()
+    strategy.tend(sender=vault)
+    assert strategy.totalAssets() > assets_pre + (10 * 10 ** asset.decimals())
+    assert comp.balanceOf(strategy) == 0

@@ -38,11 +38,8 @@ contract Strategy is BaseStrategy, Ownable {
     CometRewards public constant rewardsContract = 
         CometRewards(0x1B0e765F6224C21223AeA2af16c1C46E38885a40);
 
-    address public constant COMP =
-        address(0xc00e94Cb662C3520282E6f5717214004A7f26888);
-
-    uint internal BASE_MANTISSA;
-    uint internal BASE_INDEX_SCALE;
+    uint internal immutable BASE_MANTISSA;
+    uint internal immutable BASE_INDEX_SCALE;
 
     uint256 public minCompToSell;
     uint256 public minRewardToHarvest;
@@ -118,6 +115,10 @@ contract Strategy is BaseStrategy, Ownable {
 
     function _invest() internal override {
         uint256 _availableToInvest = balanceOfAsset();
+        if (_availableToInvest == 0) {
+            return;
+        }
+
         _depositToComet(_availableToInvest);
     }
 
@@ -164,13 +165,31 @@ contract Strategy is BaseStrategy, Ownable {
         return newSupplyRate + rewardRate;
     }
 
+    function getRewardsOwed() public view returns (uint) {
+        CometStructs.RewardConfig memory config = rewardsContract.rewardConfig(address(cToken));
+        uint256 accrued = cToken.baseTrackingAccrued(address(this));
+        if (config.shouldUpscale) {
+            accrued *= config.rescaleFactor;
+        } else {
+            accrued /= config.rescaleFactor;
+        }
+        uint256 claimed = rewardsContract.rewardsClaimed(address(cToken), address(this));
+
+        return accrued > claimed ? accrued - claimed : 0;
+    }
+
     function _tend() internal override {
         // claim rewards, sell rewards, reinvest rewards
         _claimCometRewards();
-        if(tradeFactory == address(0)) {
-            _sellRewards();
-        }
+        _sellRewards();
         _invest();
+    }
+
+    function _tendTrigger() internal override view returns(bool) {
+        if(!isBaseFeeAcceptable()) return false;
+
+        if(getRewardsOwed() + IERC20(comp).balanceOf(address(this)) > minRewardToHarvest) return true;
+
     }
 
     function _claimCometRewards() internal {
@@ -184,7 +203,7 @@ contract Strategy is BaseStrategy, Ownable {
         uint256 _comp = IERC20(comp).balanceOf(address(this));
 
         if (_comp > minCompToSell) {
-
+            _checkAllowance(address(router), comp, _comp);
             if(address(asset) == weth) {
                 ISwapRouter.ExactInputSingleParams memory params =
                     ISwapRouter.ExactInputSingleParams(
@@ -242,6 +261,9 @@ contract Strategy is BaseStrategy, Ownable {
     }
 
     function getPriceFeedAddress(address asset) public view returns (address) {
+        if(asset == cToken.baseToken()) {
+            return cToken.baseTokenPriceFeed();
+        }
         return cToken.getAssetInfoByAddress(asset).priceFeed;
     }
 

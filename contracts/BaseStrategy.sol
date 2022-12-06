@@ -7,6 +7,10 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 
 import "./interfaces/IVault.sol";
 
+interface IBaseFee {
+    function isCurrentBaseFeeAcceptable() external view returns (bool);
+}
+
 abstract contract BaseStrategy {
     address public vault;
     address public immutable asset;
@@ -66,6 +70,10 @@ abstract contract BaseStrategy {
         return _tend();
     }
 
+    function tendTrigger() external view returns (bool) {
+        return _tendTrigger();
+    }
+
     function withdraw(
         uint256 amount,
         address receiver,
@@ -93,5 +101,13 @@ abstract contract BaseStrategy {
 
     function _totalAssets() internal view virtual returns (uint256);
 
-    function _tend() internal virtual;
+    function _tend() internal virtual {}
+
+    function _tendTrigger() internal view virtual returns (bool) {}
+
+    function isBaseFeeAcceptable() internal view returns (bool) {
+        return
+            IBaseFee(0xb5e1CAcB567d98faaDB60a1fD4820720141f064F)
+                .isCurrentBaseFeeAcceptable();
+    }
 }
