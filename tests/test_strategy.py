@@ -111,10 +111,11 @@ def test_balance_of(create_vault_and_strategy, gov, amount, provide_strategy_wit
 
 def test_deposit_no_vault__reverts(create_vault_and_strategy, gov, amount, user):
     vault, strategy = create_vault_and_strategy(gov, amount)
-    with reverts("not owner"):
+    with reverts("not vault"):
         strategy.deposit(100, user, sender=user)
 
-    with reverts("not owner"):
+    # will revert due to lack of allowance
+    with reverts():
         strategy.deposit(100, user, sender=vault)
 
 
@@ -169,12 +170,12 @@ def test_max_withdraw_no_liquidity(
         user, asset.balanceOf(ctoken) - 10 ** vault.decimals(), sender=ctoken
     )
 
-    assert strategy.maxWithdraw(vault) == 10 ** vault.decimals()
+    assert strategy.maxWithdraw(vault) == strategy.totalAssets()
 
 
 def test_withdraw_no_owner__reverts(create_vault_and_strategy, gov, amount, user):
     vault, strategy = create_vault_and_strategy(gov, amount)
-    with reverts("not owner"):
+    with reverts("not vault"):
         strategy.withdraw(100, user, user, sender=user)
 
 
@@ -243,9 +244,7 @@ def test_withdraw_low_liquidity(
 
     strategy.withdraw(strategy.maxWithdraw(vault), vault, vault, sender=vault)
 
-    assert pytest.approx(
-        new_debt - 10 ** vault.decimals(), rel=1e-5
-    ) == strategy.balanceOf(vault)
+    assert strategy.balanceOfCToken() == strategy.balanceOf(vault)
     assert asset.balanceOf(strategy) == 0
     assert pytest.approx(10 ** vault.decimals(), REL_ERROR) == asset.balanceOf(vault)
     assert pytest.approx(
@@ -283,7 +282,7 @@ def test_withdraw_mev_bot(
     new_debt = amount
     provide_strategy_with_debt(gov, strategy, vault, new_debt)
 
-    with reverts("not owner"):
+    with reverts("not vault"):
         strategy.withdraw(strategy.maxWithdraw(vault), user, user, sender=user)
 
 
