@@ -58,10 +58,10 @@ contract Strategy is BaseStrategy, Ownable {
 
     //These will default to 0.
     //Will need to be manually set if asset is incentized before any harvests
-    function setUniFees(uint24 _compToEth, uint24 _ethToAssetFee)
-        external
-        onlyOwner
-    {
+    function setUniFees(
+        uint24 _compToEth,
+        uint24 _ethToAssetFee
+    ) external onlyOwner {
         compToEthFee = _compToEth;
         ethToAssetFee = _ethToAssetFee;
     }
@@ -74,12 +74,9 @@ contract Strategy is BaseStrategy, Ownable {
         minRewardToHarvest = _minRewardToHavest;
     }
 
-    function _maxWithdraw(address owner)
-        internal
-        view
-        override
-        returns (uint256)
-    {
+    function _maxWithdraw(
+        address owner
+    ) internal view override returns (uint256) {
         // TODO: may not be accurate due to unaccrued balance in cToken
         if (owner == vault) {
             // return total value we have even if illiquid so the vault doesnt assess incorrect unrealized losses
@@ -89,10 +86,9 @@ contract Strategy is BaseStrategy, Ownable {
         }
     }
 
-    function _freeFunds(uint256 _amount)
-        internal
-        returns (uint256 _amountFreed)
-    {
+    function _freeFunds(
+        uint256 _amount
+    ) internal returns (uint256 _amountFreed) {
         uint256 _idleAmount = balanceOfAsset();
         if (_amount <= _idleAmount) {
             // we have enough idle assets for the vault to take
@@ -304,11 +300,9 @@ contract Strategy is BaseStrategy, Ownable {
         return cToken.getAssetInfoByAddress(asset).priceFeed;
     }
 
-    function getCompoundPrice(address singleAssetPriceFeed)
-        public
-        view
-        returns (uint256)
-    {
+    function getCompoundPrice(
+        address singleAssetPriceFeed
+    ) public view returns (uint256) {
         return cToken.getPrice(singleAssetPriceFeed);
     }
 
