@@ -67,7 +67,7 @@ abstract contract BaseStrategy {
         address receiver
     ) public onlyVault returns (uint256) {
         // transfer and invest
-        IERC20(asset).transferFrom(vault, address(this), assets);
+        IERC20(asset).transferFrom(msg.sender, address(this), assets);
         _invest();
         return assets;
     }
@@ -93,10 +93,10 @@ abstract contract BaseStrategy {
         address receiver,
         address owner
     ) public onlyVault returns (uint256) {
-        require(amount <= _maxWithdraw(vault), "withdraw more than max");
+        require(amount <= _maxWithdraw(msg.sender), "withdraw more than max");
 
         uint256 amountWithdrawn = _withdraw(amount);
-        IERC20(asset).transfer(vault, amountWithdrawn);
+        IERC20(asset).transfer(msg.sender, amountWithdrawn);
         return amountWithdrawn;
     }
 
