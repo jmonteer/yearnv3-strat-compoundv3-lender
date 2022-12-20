@@ -42,7 +42,7 @@ library CometStructs {
 
     struct RewardOwed {
         address token;
-        uint owed;
+        uint256 owed;
     }
 
     struct TotalsCollateral {
@@ -58,17 +58,17 @@ library CometStructs {
 }
 
 interface Comet is IERC20 {
-    function baseScale() external view returns (uint);
+    function baseScale() external view returns (uint256);
 
-    function supply(address asset, uint amount) external;
+    function supply(address asset, uint256 amount) external;
 
-    function supplyTo(address to, address asset, uint amount) external;
+    function supplyTo(address to, address asset, uint256 amount) external;
 
-    function withdraw(address asset, uint amount) external;
+    function withdraw(address asset, uint256 amount) external;
 
-    function getSupplyRate(uint utilization) external view returns (uint);
+    function getSupplyRate(uint256 utilization) external view returns (uint256);
 
-    function getBorrowRate(uint utilization) external view returns (uint);
+    function getBorrowRate(uint256 utilization) external view returns (uint256);
 
     function getAssetInfoByAddress(
         address asset
@@ -100,11 +100,11 @@ interface Comet is IERC20 {
 
     function numAssets() external view returns (uint8);
 
-    function getUtilization() external view returns (uint);
+    function getUtilization() external view returns (uint256);
 
-    function baseTrackingSupplySpeed() external view returns (uint);
+    function baseTrackingSupplySpeed() external view returns (uint256);
 
-    function baseTrackingBorrowSpeed() external view returns (uint);
+    function baseTrackingBorrowSpeed() external view returns (uint256);
 
     function totalSupply() external view override returns (uint256);
 

@@ -12,9 +12,18 @@ interface IBaseFee {
 }
 
 abstract contract BaseStrategy {
-    address public vault;
+    address public immutable vault;
     address public immutable asset;
     string public name;
+
+    modifier onlyVault() {
+        _onlyVault();
+        _;
+    }
+
+    function _onlyVault() internal {
+        require(msg.sender == vault, "not vault");
+    }
 
     constructor(address _vault, string memory _name) {
         vault = _vault;
@@ -25,7 +34,11 @@ abstract contract BaseStrategy {
     function maxDeposit(
         address receiver
     ) public view virtual returns (uint256 maxAssets) {
-        maxAssets = type(uint256).max;
+        if (receiver == vault) {
+            maxAssets = type(uint256).max;
+        } else {
+            return 0;
+        }
     }
 
     function convertToAssets(uint256 shares) public view returns (uint256) {
@@ -52,11 +65,9 @@ abstract contract BaseStrategy {
     function deposit(
         uint256 assets,
         address receiver
-    ) public returns (uint256) {
-        require(msg.sender == vault && msg.sender == receiver, "not owner");
-
+    ) public onlyVault returns (uint256) {
         // transfer and invest
-        IERC20(asset).transferFrom(vault, address(this), assets);
+        IERC20(asset).transferFrom(msg.sender, address(this), assets);
         _invest();
         return assets;
     }
@@ -65,37 +76,37 @@ abstract contract BaseStrategy {
         return _maxWithdraw(owner);
     }
 
-    function tend() external {
-        require(msg.sender == vault, "not owner");
-        return _tend();
+    function tend() external onlyVault {
+        _tend();
     }
 
     function tendTrigger() external view returns (bool) {
         return _tendTrigger();
     }
 
+    function migrate(address _newStrategy) external onlyVault {
+        _migrate(_newStrategy);
+    }
+
     function withdraw(
         uint256 amount,
         address receiver,
         address owner
-    ) public returns (uint256) {
-        require(msg.sender == vault && msg.sender == receiver, "not owner");
-        require(amount <= maxWithdraw(vault), "withdraw more than max");
+    ) public onlyVault returns (uint256) {
+        require(amount <= _maxWithdraw(msg.sender), "withdraw more than max");
 
-        uint256 amountWithdrawn = _withdraw(amount, receiver, owner);
-        IERC20(asset).transfer(receiver, amountWithdrawn);
+        uint256 amountWithdrawn = _withdraw(amount);
+        IERC20(asset).transfer(msg.sender, amountWithdrawn);
         return amountWithdrawn;
     }
 
     function _maxWithdraw(
         address owner
-    ) internal view virtual returns (uint256 withdraw_amount);
+    ) internal view virtual returns (uint256 withdrawAmount);
 
     function _withdraw(
-        uint256 amount,
-        address receiver,
-        address owner
-    ) internal virtual returns (uint256 withdrawAmount);
+        uint256 amount
+    ) internal virtual returns (uint256 withdrawnAmount);
 
     function _invest() internal virtual;
 
@@ -104,6 +115,8 @@ abstract contract BaseStrategy {
     function _tend() internal virtual {}
 
     function _tendTrigger() internal view virtual returns (bool) {}
+
+    function _migrate(address) internal virtual;
 
     function isBaseFeeAcceptable() internal view returns (bool) {
         return
