@@ -4,80 +4,85 @@ pragma solidity 0.8.14;
 import "@openzeppelin/contracts/utils/math/Math.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-import {IERC20, BaseStrategy, SafeERC20} from "BaseStrategy.sol";
+import {BaseStrategy, IERC20, SafeERC20} from "BaseStrategy.sol";
 
-import "interfaces/IVault.sol";
-import {Comet, CometStructs, CometRewards} from "interfaces/CompoundV3.sol";
-import {ITradeFactory} from "interfaces/ySwaps/ITradeFactory.sol";
-import {ISwapRouter} from "interfaces/univ3/ISwapRouter.sol";
+import "./interfaces/IVault.sol";
+import "./interfaces/aave/ILendingPool.sol";
+import "./interfaces/aave/IProtocolDataProvider.sol";
+import "./interfaces/aave/IReserveInterestRateStrategy.sol";
+import "./libraries/aave/DataTypes.sol";
+import "./interfaces/morpho/IMorpho.sol";
+import "./interfaces/morpho/IRewardsDistributor.sol";
+import "./interfaces/morpho/ILens.sol";
+import "./interfaces/ySwaps/ITradeFactory.sol";
 
 contract Strategy is BaseStrategy, Ownable {
     using SafeERC20 for IERC20;
 
-    Comet public immutable cToken;
-    uint256 internal constant SECONDS_PER_YEAR = 365 days;
-    uint256 internal constant DAYS_PER_YEAR = 365;
-    uint256 internal constant SECONDS_PER_DAY = 60 * 60 * 24;
+    ILendingPool internal constant POOL = ILendingPool(0x7d2768dE32b0b80b7a3454c06BdAc94A69DDc7A9);
+    IProtocolDataProvider internal constant AAVE_DATA_PROIVDER =
+        IProtocolDataProvider(0x057835Ad21a177dbdd3090bB1CAE03EaCF78Fc6d);
 
-    //Uniswap v3 router
-    ISwapRouter internal constant router =
-        ISwapRouter(0xE592427A0AEce92De3Edee1F18E0157C05861564);
-
-    uint24 public compToEthFee;
-    uint24 public ethToAssetFee;
-
-    address internal constant comp = 0xc00e94Cb662C3520282E6f5717214004A7f26888;
-
-    address internal constant weth = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
+    // Morpho is a contract to handle interaction with the protocol
+    IMorpho internal constant MORPHO =
+        IMorpho(0x777777c9898D384F785Ee44Acfe945efDFf5f3E0);
+    // Lens is a contract to fetch data about Morpho protocol
+    ILens internal constant LENS =
+        ILens(0x507fA343d0A90786d86C7cd885f5C49263A91FF4);
+    // reward token, not currently listed
+    address internal constant MORPHO_TOKEN =
+        0x9994E35Db50125E0DF82e4c2dde62496CE330999;
+    // used for claiming reward Morpho token
+    address public rewardsDistributor;
+    // aToken = Morpho Aave Market for want token
+    address public aToken;
+    // Max gas used for matching with p2p deals
+    uint256 public maxGasForMatching;
 
     address public tradeFactory;
-
-    CometRewards public constant rewardsContract =
-        CometRewards(0x1B0e765F6224C21223AeA2af16c1C46E38885a40);
-
-    uint256 internal immutable BASE_MANTISSA;
-    uint256 internal immutable BASE_INDEX_SCALE;
-
-    uint256 public minCompToSell;
-    uint256 public minRewardToHarvest;
 
     constructor(
         address _vault,
         string memory _name,
-        Comet _cToken
+        address _aToken
     ) BaseStrategy(_vault, _name) {
-        cToken = _cToken;
-        require(cToken.baseToken() == IVault(vault).asset());
-
-        BASE_MANTISSA = cToken.baseScale();
-        BASE_INDEX_SCALE = cToken.baseIndexScale();
-
-        minCompToSell = 0.05 ether;
-        minRewardToHarvest = 10 ether;
+        aToken = _aToken;
+        IMorpho.Market memory market = MORPHO.market(aToken);
+        require(market.underlyingToken == IVault(vault).asset(), "WRONG ATOKEN");
+        IERC20(IVault(vault).asset()).safeApprove(
+            address(MORPHO),
+            type(uint256).max
+        );
     }
 
-    //These will default to 0.
-    //Will need to be manually set if asset is incentized before any harvests
-    function setUniFees(
-        uint24 _compToEth,
-        uint24 _ethToAssetFee
+    /**
+     * @notice Set the maximum amount of gas to consume to get matched in peer-to-peer.
+     * @dev
+     *  This value is needed in Morpho supply liquidity calls.
+     *  Supplyed liquidity goes to loop with current loans on Morpho
+     *  and creates a match for p2p deals. The loop starts from bigger liquidity deals.
+     *  The default value set by Morpho is 100000.
+     * @param _maxGasForMatching new maximum gas value for P2P matching
+     */
+    function setMaxGasForMatching(
+        uint256 _maxGasForMatching
     ) external onlyOwner {
-        compToEthFee = _compToEth;
-        ethToAssetFee = _ethToAssetFee;
+        maxGasForMatching = _maxGasForMatching;
     }
 
-    function setMinRewardAmounts(
-        uint256 _minCompToSell,
-        uint256 _minRewardToHavest
+    /**
+     * @notice Set new rewards distributor contract
+     * @param _rewardsDistributor address of new contract
+     */
+    function setRewardsDistributor(
+        address _rewardsDistributor
     ) external onlyOwner {
-        minCompToSell = _minCompToSell;
-        minRewardToHarvest = _minRewardToHavest;
+        rewardsDistributor = _rewardsDistributor;
     }
 
     function _maxWithdraw(
         address owner
     ) internal view override returns (uint256) {
-        // TODO: may not be accurate due to unaccrued balance in cToken
         if (owner == vault) {
             // return total value we have even if illiquid so the vault doesnt assess incorrect unrealized losses
             return _totalAssets();
@@ -86,34 +91,23 @@ contract Strategy is BaseStrategy, Ownable {
         }
     }
 
-    function _freeFunds(
-        uint256 _amount
-    ) internal returns (uint256 _amountFreed) {
-        uint256 _idleAmount = balanceOfAsset();
-        if (_amount <= _idleAmount) {
-            // we have enough idle assets for the vault to take
-            _amountFreed = _amount;
-        } else {
-            // NOTE: we need the balance updated
-            cToken.accrueAccount(address(this));
-            // We need to take from Aave enough to reach _amount
-            // Balance of
-            // We run with 'unchecked' as we are safe from underflow
+    function _withdraw(uint256 amount) internal override returns (uint256 amountFreed) {
+        uint256 idleAmount = balanceOfAsset();
+        if (amount > idleAmount) {
+            // safe from underflow
             unchecked {
-                _withdrawFromComet(
-                    Math.min(_amount - _idleAmount, balanceOfCToken())
-                );
+                _withdrawFromMorpho(amount - idleAmount);
             }
-            _amountFreed = balanceOfAsset();
+            amountFreed = balanceOfAsset();
+        } else {
+            // we have enough idle assets for the vault to take
+            amountFreed = amount;
         }
     }
 
-    function _withdraw(uint256 amount) internal override returns (uint256) {
-        return _freeFunds(amount);
-    }
-
     function _totalAssets() internal view override returns (uint256) {
-        return balanceOfAsset() + balanceOfCToken();
+        (, , uint256 totalBalance) = underlyingBalance();
+        return balanceOfAsset() + totalBalance;
     }
 
     function _invest() internal override {
@@ -122,188 +116,119 @@ contract Strategy is BaseStrategy, Ownable {
             return;
         }
 
-        _depositToComet(_availableToInvest);
+        _depositToMorpho(_availableToInvest);
     }
 
-    function _withdrawFromComet(uint256 _amount) internal {
-        _amount = Math.min(_amount, IERC20(asset).balanceOf(address(cToken)));
-
-        cToken.withdraw(address(asset), _amount);
-    }
-
-    function _depositToComet(uint256 _amount) internal {
-        Comet _cToken = cToken;
-        _checkAllowance(address(_cToken), asset, _amount);
-        _cToken.supply(address(asset), _amount);
-    }
-
-    function _checkAllowance(
-        address _contract,
-        address _token,
-        uint256 _amount
-    ) internal {
-        if (IERC20(_token).allowance(address(this), _contract) < _amount) {
-            IERC20(_token).approve(_contract, 0);
-            IERC20(_token).approve(_contract, _amount);
+    function _withdrawFromMorpho(uint256 _amount) internal {
+        // if the market is paused we cannot withdraw
+        IMorpho.Market memory market = MORPHO.market(aToken);
+        if (!market.isPaused) {
+            // check if there is enough liquidity in aave
+            uint256 aaveLiquidity = IERC20(asset).balanceOf(address(aToken));
+            if (aaveLiquidity > 1) {
+                MORPHO.withdraw(aToken, Math.min(_amount, aaveLiquidity));
+            }
         }
     }
 
-    function balanceOfCToken() public view returns (uint256) {
-        return IERC20(cToken).balanceOf(address(this));
+    function _depositToMorpho(uint256 _amount) internal {
+        // _checkAllowance(address(MORPHO), asset, _amount);
+        MORPHO.supply(
+            aToken,
+            address(this),
+            _amount,
+            maxGasForMatching
+        );
+    }
+
+    // function _checkAllowance(
+    //     address _contract,
+    //     address _token,
+    //     uint256 _amount
+    // ) internal {
+    //     if (IERC20(_token).allowance(address(this), _contract) < _amount) {
+    //         IERC20(_token).approve(_contract, 0);
+    //         IERC20(_token).approve(_contract, _amount);
+    //     }
+    // }
+
+    /**
+     * @notice Returns the value deposited in Morpho protocol
+     * @return balanceInP2P Amount supplied through Morpho that is matched peer-to-peer
+     * @return balanceOnPool Amount supplied through Morpho on the underlying protocol's pool
+     * @return totalBalance Equals `balanceOnPool` + `balanceInP2P`
+     */
+    function underlyingBalance()
+        public
+        view
+        returns (
+            uint256 balanceInP2P,
+            uint256 balanceOnPool,
+            uint256 totalBalance
+        )
+    {
+        (balanceInP2P, balanceOnPool, totalBalance) = LENS
+            .getCurrentSupplyBalanceInOf(aToken, address(this));
     }
 
     function balanceOfAsset() internal view returns (uint256) {
         return IERC20(asset).balanceOf(address(this));
     }
 
-    function aprAfterDebtChange(int256 delta) external view returns (uint256) {
-        uint256 borrows = cToken.totalBorrow();
-        uint256 supply = cToken.totalSupply();
-
-        uint256 newUtilization = (borrows * 1e18) /
-            uint256(int256(supply) + delta);
-        uint256 newSupplyRate = cToken.getSupplyRate(newUtilization) *
-            SECONDS_PER_YEAR;
-
-        uint256 rewardRate = getRewardAprForSupplyBase(
-            getPriceFeedAddress(comp),
-            delta
-        );
-
-        return newSupplyRate + rewardRate;
-    }
-
-    function getRewardsOwed() public view returns (uint256) {
-        CometStructs.RewardConfig memory config = rewardsContract.rewardConfig(
-            address(cToken)
-        );
-        uint256 accrued = cToken.baseTrackingAccrued(address(this));
-        if (config.shouldUpscale) {
-            accrued *= config.rescaleFactor;
+    function aprAfterDebtChange(int256 delta) external view returns (uint256 apr) {
+        if (delta < 0) {
+            (, , uint256 totalBalance) = underlyingBalance();
+            // TODO: think how to implement logic for 
+            // if (delta > balanceOnPool) {
+            // }
+            // simulated supply rate is a lower bound
+            // use address(0) because we simulate removing liquidity
+            (apr, , , ) = LENS.getNextUserSupplyRatePerYear(
+                aToken,
+                address(0),
+                totalBalance
+            );
+            // downscale to WAD(1e18)
+            apr = apr / 1e9;
         } else {
-            accrued /= config.rescaleFactor;
+            // add amount to current user
+            // simulated supply rate is a lower bound 
+            (apr, , , ) = LENS.getNextUserSupplyRatePerYear(aToken, address(this), uint256(delta));
+            // downscale to WAD(1e18)
+            apr = apr / 1e9;
         }
-        uint256 claimed = rewardsContract.rewardsClaimed(
-            address(cToken),
-            address(this)
-        );
-
-        return accrued > claimed ? accrued - claimed : 0;
     }
 
     function _tend() internal override {
-        // claim rewards, sell rewards, reinvest rewards
-        _claimCometRewards();
-        _sellRewards();
+        // no rewards so only if what is free
         _invest();
     }
 
-    function _tendTrigger() internal view override returns (bool) {
-        if (!isBaseFeeAcceptable()) return false;
-
-        if (
-            getRewardsOwed() + IERC20(comp).balanceOf(address(this)) >
-            minRewardToHarvest
-        ) return true;
-    }
-
     function _migrate(address _newStrategy) internal override {
-        // NOTE: we need the balance updated
-        cToken.accrueAccount(address(this));
-
-        _withdrawFromComet(balanceOfCToken());
+        // withdraw all
+        _withdrawFromMorpho(type(uint256).max);
 
         uint256 looseAsset = balanceOfAsset();
-
         IERC20(asset).transfer(_newStrategy, looseAsset);
     }
 
-    function _claimCometRewards() internal {
-        rewardsContract.claim(address(cToken), address(this), true);
-    }
-
-    function _sellRewards() internal {
-        //check for Trade Factory implementation or that Uni fees are not set
-        if (tradeFactory != address(0) || compToEthFee == 0) return;
-
-        uint256 _comp = IERC20(comp).balanceOf(address(this));
-
-        if (_comp > minCompToSell) {
-            _checkAllowance(address(router), comp, _comp);
-            if (address(asset) == weth) {
-                ISwapRouter.ExactInputSingleParams memory params = ISwapRouter
-                    .ExactInputSingleParams(
-                        comp, // tokenIn
-                        address(asset), // tokenOut
-                        compToEthFee, // comp-eth fee
-                        address(this), // recipient
-                        block.timestamp, // deadline
-                        _comp, // amountIn
-                        0, // amountOut
-                        0 // sqrtPriceLimitX96
-                    );
-
-                router.exactInputSingle(params);
-            } else {
-                bytes memory path = abi.encodePacked(
-                    comp, // comp-ETH
-                    compToEthFee,
-                    weth, // ETH-asset
-                    ethToAssetFee,
-                    address(asset)
-                );
-
-                // Proceeds from Comp are not subject to minExpectedSwapPercentage
-                // so they could get sandwiched if we end up in an uncle block
-                router.exactInput(
-                    ISwapRouter.ExactInputParams(
-                        path,
-                        address(this),
-                        block.timestamp,
-                        _comp,
-                        0
-                    )
-                );
-            }
-        }
-    }
-
-    /*
-     * Get the current reward for supplying APR in Compound III
-     * @param rewardTokenPriceFeed The address of the reward token (e.g. COMP) price feed
-     * @param newAmount Any amount that will be added to the total supply in a deposit
-     * @return The reward APR in USD as a decimal scaled up by 1e18
+    /**
+     * @notice Claims MORPHO rewards. Use Morpho API to get the data: https://api.morpho.xyz/rewards/{address}
+     * @dev See stages of Morpho rewards distibution: https://docs.morpho.xyz/usdmorpho/ages-and-epochs/age-2
+     * @param _account The address of the claimer.
+     * @param _claimable The overall claimable amount of token rewards.
+     * @param _proof The merkle proof that validates this claim.
      */
-    function getRewardAprForSupplyBase(
-        address rewardTokenPriceFeed,
-        int256 newAmount
-    ) public view returns (uint256) {
-        uint256 rewardToSuppliersPerDay = (cToken.baseTrackingSupplySpeed() *
-            SECONDS_PER_DAY *
-            BASE_INDEX_SCALE) / BASE_MANTISSA;
-        if (rewardToSuppliersPerDay == 0) return 0;
-
-        uint256 rewardTokenPriceInUsd = getCompoundPrice(rewardTokenPriceFeed);
-        uint256 assetPriceInUsd = getCompoundPrice(cToken.baseTokenPriceFeed());
-        uint256 assetTotalSupply = uint256(
-            int256(cToken.totalSupply()) + newAmount
+    function claimMorphoRewards(
+        address _account,
+        uint256 _claimable,
+        bytes32[] calldata _proof
+    ) external onlyOwner {
+        IRewardsDistributor(rewardsDistributor).claim(
+            _account,
+            _claimable,
+            _proof
         );
-        return
-            ((rewardTokenPriceInUsd * rewardToSuppliersPerDay) /
-                (assetTotalSupply * assetPriceInUsd)) * DAYS_PER_YEAR;
-    }
-
-    function getPriceFeedAddress(address asset) public view returns (address) {
-        if (asset == cToken.baseToken()) {
-            return cToken.baseTokenPriceFeed();
-        }
-        return cToken.getAssetInfoByAddress(asset).priceFeed;
-    }
-
-    function getCompoundPrice(
-        address singleAssetPriceFeed
-    ) public view returns (uint256) {
-        return cToken.getPrice(singleAssetPriceFeed);
     }
 
     // ---------------------- YSWAPS FUNCTIONS ----------------------
@@ -315,8 +240,8 @@ contract Strategy is BaseStrategy, Ownable {
 
         ITradeFactory tf = ITradeFactory(_tradeFactory);
 
-        IERC20(comp).safeApprove(_tradeFactory, type(uint256).max);
-        tf.enable(comp, address(asset));
+        IERC20(MORPHO_TOKEN).safeApprove(_tradeFactory, type(uint256).max);
+        tf.enable(MORPHO_TOKEN, address(asset));
 
         tradeFactory = _tradeFactory;
     }
@@ -326,8 +251,8 @@ contract Strategy is BaseStrategy, Ownable {
     }
 
     function _removeTradeFactoryPermissions() internal {
-        IERC20(comp).safeApprove(tradeFactory, 0);
-        ITradeFactory(tradeFactory).disable(comp, address(asset));
+        IERC20(MORPHO_TOKEN).safeApprove(tradeFactory, 0);
+        ITradeFactory(tradeFactory).disable(MORPHO_TOKEN, address(asset));
         tradeFactory = address(0);
     }
 }

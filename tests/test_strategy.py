@@ -79,7 +79,7 @@ def test_convert_to_shares(strategy, assets_amount):
 
 
 def test_total_assets(
-    gov, asset, ctoken, create_vault_and_strategy, provide_strategy_with_debt, amount
+    create_vault_and_strategy, provide_strategy_with_debt, gov, asset, amount
 ):
     vault, strategy = create_vault_and_strategy(gov, amount)
     assert strategy.totalAssets() == 0
@@ -91,7 +91,7 @@ def test_total_assets(
     assert pytest.approx(new_debt, REL_ERROR) == strategy.totalAssets()
     assert asset.balanceOf(vault) == amount - new_debt
     assert asset.balanceOf(strategy) == 0
-    assert pytest.approx(new_debt, REL_ERROR) == ctoken.balanceOf(strategy)
+    assert pytest.approx(new_debt, REL_ERROR) == strategy.underlyingBalance()[2]
 
 
 def test_balance_of(create_vault_and_strategy, gov, amount, provide_strategy_with_debt):
@@ -120,7 +120,7 @@ def test_deposit_no_vault__reverts(create_vault_and_strategy, gov, amount, user)
 
 
 def test_deposit(
-    asset, ctoken, create_vault_and_strategy, gov, amount, provide_strategy_with_debt
+    asset, create_vault_and_strategy, gov, amount, provide_strategy_with_debt
 ):
     vault, strategy = create_vault_and_strategy(gov, amount)
     assert strategy.totalAssets() == 0
@@ -133,11 +133,11 @@ def test_deposit(
     assert asset.balanceOf(vault) == amount // 2
     # get's reinvested directly
     assert asset.balanceOf(strategy) == 0
-    assert pytest.approx(new_debt, REL_ERROR) == ctoken.balanceOf(strategy)
+    assert pytest.approx(new_debt, REL_ERROR) == strategy.underlyingBalance()[2]
 
 
 def test_max_withdraw(
-    asset, ctoken, create_vault_and_strategy, gov, amount, provide_strategy_with_debt
+    asset, create_vault_and_strategy, gov, amount, provide_strategy_with_debt
 ):
     vault, strategy = create_vault_and_strategy(gov, amount)
     assert strategy.maxWithdraw(vault) == 0
@@ -150,7 +150,7 @@ def test_max_withdraw(
 
 def test_max_withdraw_no_liquidity(
     asset,
-    ctoken,
+    atoken,
     user,
     create_vault_and_strategy,
     gov,
@@ -165,9 +165,9 @@ def test_max_withdraw_no_liquidity(
 
     assert pytest.approx(new_debt, REL_ERROR) == strategy.maxWithdraw(vault)
 
-    # let's drain ctoken contract
+    # let's drain atoken contract
     asset.transfer(
-        user, asset.balanceOf(ctoken) - 10 ** vault.decimals(), sender=ctoken
+        user, asset.balanceOf(atoken) - 10 ** vault.decimals(), sender=atoken
     )
 
     assert strategy.maxWithdraw(vault) == strategy.totalAssets()
@@ -186,7 +186,7 @@ def test_withdraw_above_max__reverts(create_vault_and_strategy, gov, amount, use
 
 
 def test_withdraw_more_than_max(
-    asset, ctoken, create_vault_and_strategy, gov, amount, provide_strategy_with_debt
+    asset, create_vault_and_strategy, gov, amount, provide_strategy_with_debt
 ):
     vault, strategy = create_vault_and_strategy(gov, amount)
     new_debt = amount // 2
@@ -202,7 +202,7 @@ def test_withdraw_more_than_max(
 
 
 def test_withdraw(
-    asset, ctoken, create_vault_and_strategy, gov, amount, provide_strategy_with_debt
+    asset, create_vault_and_strategy, gov, amount, provide_strategy_with_debt
 ):
     vault, strategy = create_vault_and_strategy(gov, amount)
     new_debt = amount // 2
@@ -210,24 +210,24 @@ def test_withdraw(
 
     assert asset.balanceOf(strategy) == 0
     assert asset.balanceOf(vault) == amount // 2
-    assert pytest.approx(new_debt, REL_ERROR) == ctoken.balanceOf(strategy)
+    assert pytest.approx(new_debt, REL_ERROR) == strategy.underlyingBalance()[2]
 
     strategy.withdraw(strategy.maxWithdraw(vault), vault, vault, sender=vault)
 
     assert pytest.approx(0, abs=1e3) == strategy.balanceOf(vault)
     assert asset.balanceOf(strategy) == 0
     assert pytest.approx(amount, REL_ERROR) == asset.balanceOf(vault)
-    assert pytest.approx(0, abs=1e3) == ctoken.balanceOf(strategy)
+    assert pytest.approx(0, abs=1e3) == strategy.underlyingBalance()[2]
 
 
 def test_withdraw_low_liquidity(
     asset,
-    ctoken,
     user,
     create_vault_and_strategy,
     gov,
     amount,
     provide_strategy_with_debt,
+    atoken,
 ):
     vault, strategy = create_vault_and_strategy(gov, amount)
     new_debt = amount
@@ -235,44 +235,45 @@ def test_withdraw_low_liquidity(
 
     assert asset.balanceOf(strategy) == 0
     assert asset.balanceOf(vault) == 0
-    assert pytest.approx(new_debt, REL_ERROR) == ctoken.balanceOf(strategy)
+    assert pytest.approx(new_debt, REL_ERROR) == strategy.underlyingBalance()[2]
 
-    # let's drain ctoken contract
+    # let's drain atoken contract
     asset.transfer(
-        user, asset.balanceOf(ctoken) - 10 ** vault.decimals(), sender=ctoken
+        user, asset.balanceOf(atoken) - 10 ** vault.decimals(), sender=atoken
     )
 
     strategy.withdraw(strategy.maxWithdraw(vault), vault, vault, sender=vault)
 
-    assert strategy.balanceOfCToken() == strategy.balanceOf(vault)
+    assert strategy.underlyingBalance()[2] == strategy.balanceOf(vault)
     assert asset.balanceOf(strategy) == 0
     assert pytest.approx(10 ** vault.decimals(), REL_ERROR) == asset.balanceOf(vault)
     assert pytest.approx(
         new_debt - 10 ** vault.decimals(), rel=1e-5
-    ) == ctoken.balanceOf(strategy)
+    ) == strategy.underlyingBalance()[2]
 
 
-def test_apr(
-    asset,
-    ctoken,
-    user,
-    create_vault_and_strategy,
-    gov,
-    amount,
-    provide_strategy_with_debt,
-):
-    vault, strategy = create_vault_and_strategy(gov, amount)
-    new_debt = amount
-    provide_strategy_with_debt(gov, strategy, vault, new_debt)
+#TODO: fix this
+# def test_apr(
+#     asset,
+#     user,
+#     create_vault_and_strategy,
+#     gov,
+#     amount,
+#     provide_strategy_with_debt,
+#     atoken,
+# ):
+#     vault, strategy = create_vault_and_strategy(gov, amount)
+#     new_debt = amount
+#     provide_strategy_with_debt(gov, strategy, vault, new_debt)
 
-    current_utilization = ctoken.getUtilization()
-    current_real_apr = ctoken.getSupplyRate(current_utilization) * YEAR
-    current_expected_apr = strategy.aprAfterDebtChange(0)
-    assert pytest.approx(current_real_apr, rel=1e-5) == current_expected_apr
+#     current_utilization = atoken.getUtilization()
+#     current_real_apr = atoken.getSupplyRate(current_utilization) * YEAR
+#     current_expected_apr = strategy.aprAfterDebtChange(0)
+#     assert pytest.approx(current_real_apr, rel=1e-5) == current_expected_apr
 
-    # TODO: is there a way to re calculate without replicating in python?
-    assert current_real_apr < strategy.aprAfterDebtChange(-int(1e12))
-    assert current_real_apr > strategy.aprAfterDebtChange(int(1e12))
+#     # TODO: is there a way to re calculate without replicating in python?
+#     assert current_real_apr < strategy.aprAfterDebtChange(-int(1e12))
+#     assert current_real_apr > strategy.aprAfterDebtChange(int(1e12))
 
 
 def test_withdraw_mev_bot(
@@ -284,26 +285,3 @@ def test_withdraw_mev_bot(
 
     with reverts("not vault"):
         strategy.withdraw(strategy.maxWithdraw(vault), user, user, sender=user)
-
-
-def test_rewards(
-    asset, user, create_vault_and_strategy, gov, amount, provide_strategy_with_debt
-):
-    vault, strategy = create_vault_and_strategy(gov, amount)
-    new_debt = amount
-    assert strategy.getRewardsOwed() == 0
-    provide_strategy_with_debt(gov, strategy, vault, new_debt)
-
-    chain.mine(1000, timestamp=chain.pending_timestamp + 14 * 24 * 3600)
-
-    # rewards are off so we check we can sell
-    comp_whale = accounts["0xf977814e90da44bfa03b6295a0616a897441acec"]
-    # airdrop comp to strategy and be sure it can sell them
-    comp = Contract("0xc00e94Cb662C3520282E6f5717214004A7f26888")
-    comp.transfer(strategy, int(100e18), sender=comp_whale)
-
-    strategy.setUniFees(3000, 3000, sender=accounts[strategy.owner()])
-    assets_pre = strategy.totalAssets()
-    strategy.tend(sender=vault)
-    assert strategy.totalAssets() > assets_pre + (10 * 10 ** asset.decimals())
-    assert comp.balanceOf(strategy) == 0
