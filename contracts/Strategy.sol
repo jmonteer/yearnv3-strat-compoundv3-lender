@@ -179,14 +179,14 @@ contract Strategy is BaseStrategy, Ownable {
 
     function aprAfterDebtChange(int256 delta) external view returns (uint256 apr) {
         if (delta < 0) {
-            apr = aprForNegativeDebtChange(uint256(-delta));
+            apr = aprAfterLiquidityWithdraw(uint256(-delta));
         } else {
-            apr = aprForPositiveDebtChange(uint256(delta));
+            apr = aprAfterLiquiditySupply(uint256(delta));
         }
         apr = apr / WadRayMath.WAD_RAY_RATIO;
     }
 
-    function aprForPositiveDebtChange(uint256 _amount) internal view returns (uint256 apr) {
+    function aprAfterLiquiditySupply(uint256 _amount) internal view returns (uint256 apr) {
         ILens.Indexes memory indexes = LENS.getIndexes(aToken);
         IMorpho.Market memory market = MORPHO.market(aToken);
         IMorpho.Delta memory delta = MORPHO.deltas(aToken);
@@ -256,60 +256,44 @@ contract Strategy is BaseStrategy, Ownable {
         );
     }
 
-    function aprForNegativeDebtChange(uint256 _amountToRemove) internal view returns (uint256 apr) {
-        // ILens.Indexes memory indexes = LENS.getIndexes(aToken);
-        // IMorpho.Market memory market = MORPHO.market(aToken);
-        // IMorpho.Delta memory delta = MORPHO.deltas(aToken);
-        // IMorpho.SupplyBalance memory supplyBalance = MORPHO.supplyBalanceInOf(aToken, address(this));
+    function aprAfterLiquidityWithdraw(uint256 _amount) internal view returns (uint256 apr) {
+        ILens.Indexes memory indexes = LENS.getIndexes(aToken);
+        IMorpho.Market memory market = MORPHO.market(aToken);
+        IMorpho.Delta memory delta = MORPHO.deltas(aToken);
+        IMorpho.SupplyBalance memory supplyBalance = MORPHO.supplyBalanceInOf(aToken, address(this));
+        _amount = Math.min(supplyBalance.onPool + supplyBalance.inP2P, _amount);
 
-        // if (_amount > supplyBalance.pool) {
-        //     address firstPoolBorrower = MORPHO.getHead(
-        //         aToken,
-        //         IMorpho.PositionType.BORROWERS_ON_POOL
-        //     );
-        //     uint256 firstPoolBorrowerBalance = MORPHO
-        //     .borrowBalanceInOf(aToken, firstPoolBorrower)
-        //     .onPool;
+        uint256 removedFromPool = Math.min(supplyBalance.onPool, _amount);
+        supplyBalance.onPool = supplyBalance.onPool - WadRayMath.rayDiv(removedFromPool, indexes.poolSupplyIndex);
+        _amount -= removedFromPool;
 
-        //     if (firstPoolBorrowerBalance > 0) {
-        //         uint256 matchedP2P = Math.min(
-        //             WadRayMath.rayMul(firstPoolBorrowerBalance, indexes.poolBorrowIndex),
-        //             _amount
-        //         );
+        uint256 removedFromP2P;
+        if (_amount > 0) {
+            removedFromP2P = supplyBalance.inP2P - WadRayMath.rayDiv(_amount, indexes.p2pSupplyIndex);
+            supplyBalance.inP2P -= removedFromP2P;
+        }
 
-        //         supplyBalance.inP2P = supplyBalance.inP2P + WadRayMath.rayDiv(matchedP2P, indexes.p2pSupplyIndex);
-        //         repaidToPool += matchedP2P;
-        //         _amount -= matchedP2P;
-        //     }
-        // }
+        (uint256 poolSupplyRate, uint256 variableBorrowRate) = getAaveRates(0, removedFromP2P, 0, removedFromPool);
 
-        // uint256 suppliedToPool;
-        // if (_amount > 0) {
-        //     supplyBalance.onPool = supplyBalance.onPool + WadRayMath.rayDiv(_amount, indexes.poolSupplyIndex);
-        //     suppliedToPool = _amount;
-        // }
+        uint256 p2pSupplyRate = computeP2PSupplyRatePerYear(
+            P2PRateComputeParams({
+                poolSupplyRatePerYear: poolSupplyRate,
+                poolBorrowRatePerYear: variableBorrowRate,
+                poolIndex: indexes.poolSupplyIndex,
+                p2pIndex: indexes.p2pSupplyIndex,
+                p2pDelta: delta.p2pSupplyDelta,
+                p2pAmount: delta.p2pSupplyAmount,
+                p2pIndexCursor: market.p2pIndexCursor,
+                reserveFactor: market.reserveFactor
+            })
+        );
 
-        // (uint256 poolSupplyRate, uint256 variableBorrowRate) = getAaveRates(suppliedToPool, 0, repaidToPool, 0);
-
-        // uint256 p2pSupplyRate = computeP2PSupplyRatePerYear(
-        //     P2PRateComputeParams({
-        //         poolSupplyRatePerYear: poolSupplyRate,
-        //         poolBorrowRatePerYear: variableBorrowRate,
-        //         poolIndex: indexes.poolSupplyIndex,
-        //         p2pIndex: indexes.p2pSupplyIndex,
-        //         p2pDelta: delta.p2pSupplyDelta,
-        //         p2pAmount: delta.p2pSupplyAmount,
-        //         p2pIndexCursor: market.p2pIndexCursor,
-        //         reserveFactor: market.reserveFactor
-        //     })
-        // );
-
-        // (apr, ) = getWeightedRate(
-        //     p2pSupplyRate,
-        //     poolSupplyRate,
-        //     WadRayMath.rayMul(supplyBalance.inP2P, indexes.p2pSupplyIndex),
-        //     WadRayMath.rayMul(supplyBalance.onPool, indexes.poolSupplyIndex)
-        // );
+        (apr, ) = getWeightedRate(
+            p2pSupplyRate,
+            poolSupplyRate,
+            WadRayMath.rayMul(supplyBalance.inP2P, indexes.p2pSupplyIndex),
+            WadRayMath.rayMul(supplyBalance.onPool, indexes.poolSupplyIndex)
+        );
     }
 
     function _tend() internal override {

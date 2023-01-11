@@ -25,6 +25,11 @@ def user(accounts):
 
 
 @pytest.fixture(scope="session")
+def whale(accounts):
+    return accounts[ASSET_WHALE_ADDRESS]
+
+
+@pytest.fixture(scope="session")
 def asset():
     yield Contract(ASSET_ADDRESS)
 
@@ -113,9 +118,8 @@ def create_vault_and_strategy(strategy, vault, deposit_into_vault):
 
 
 @pytest.fixture(scope="function")
-def deposit_into_vault(asset, gov):
+def deposit_into_vault(asset, whale):
     def deposit_into_vault(vault, amount_to_deposit):
-        whale = accounts[ASSET_WHALE_ADDRESS]
         asset.approve(vault.address, amount_to_deposit, sender=whale)
         vault.deposit(amount_to_deposit, whale.address, sender=whale)
 

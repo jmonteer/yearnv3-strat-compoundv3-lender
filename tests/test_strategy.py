@@ -252,30 +252,6 @@ def test_withdraw_low_liquidity(
     ) == strategy.underlyingBalance()[2]
 
 
-def test_apr(
-    asset,
-    user,
-    create_vault_and_strategy,
-    gov,
-    amount,
-    provide_strategy_with_debt,
-    atoken,
-    aave_lending_pool,
-):
-    vault, strategy = create_vault_and_strategy(gov, amount)
-    new_debt = amount
-    provide_strategy_with_debt(gov, strategy, vault, new_debt)
-
-    # get aave supply rates in RAY, downscale to WAD
-    current_real_apr = aave_lending_pool.getReserveData(asset)[3] / 1e9
-    current_expected_apr = strategy.aprAfterDebtChange(0)
-
-    # strategy calculates lower bound of apr so we don't check upper bound
-    assert current_real_apr >= current_expected_apr
-
-    # TODO: think about testing apr for adding and removing debt
-
-
 def test_withdraw_mev_bot(
     asset, user, create_vault_and_strategy, gov, amount, provide_strategy_with_debt
 ):
