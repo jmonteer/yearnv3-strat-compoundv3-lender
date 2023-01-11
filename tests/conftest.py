@@ -42,6 +42,12 @@ def atoken():
 
 
 @pytest.fixture(scope="session")
+def aave_lending_pool():
+    # NOTE: adding default contract type because it's not verified
+    return Contract("0x7d2768dE32b0b80b7a3454c06BdAc94A69DDc7A9")
+
+
+@pytest.fixture(scope="session")
 def create_vault(project, gov):
     def create_vault(
         asset,
