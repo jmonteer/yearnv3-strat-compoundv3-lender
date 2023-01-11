@@ -40,7 +40,6 @@ contract Strategy is BaseStrategy, Ownable {
     address public aToken;
     // Max gas used for matching with p2p deals
     uint256 public maxGasForMatching;
-
     address public tradeFactory;
 
     constructor(
@@ -50,11 +49,7 @@ contract Strategy is BaseStrategy, Ownable {
     ) BaseStrategy(_vault, _name) {
         aToken = _aToken;
         IMorpho.Market memory market = MORPHO.market(aToken);
-        require(market.underlyingToken == asset, "WRONG ATOKEN");
-        IERC20(IVault(vault).asset()).safeApprove(
-            address(MORPHO),
-            type(uint256).max
-        );
+        require(market.underlyingToken == asset, "WRONG A_TOKEN");
     }
 
     /**
@@ -128,13 +123,14 @@ contract Strategy is BaseStrategy, Ownable {
             // check if there is enough liquidity in aave
             uint256 aaveLiquidity = IERC20(asset).balanceOf(address(aToken));
             if (aaveLiquidity > 1) {
+                // morpho will downgrade to max user value
                 MORPHO.withdraw(aToken, Math.min(_amount, aaveLiquidity));
             }
         }
     }
 
     function _depositToMorpho(uint256 _amount) internal {
-        // _checkAllowance(address(MORPHO), asset, _amount);
+        _checkAllowance(address(MORPHO), asset, _amount);
         MORPHO.supply(
             aToken,
             address(this),
@@ -143,16 +139,16 @@ contract Strategy is BaseStrategy, Ownable {
         );
     }
 
-    // function _checkAllowance(
-    //     address _contract,
-    //     address _token,
-    //     uint256 _amount
-    // ) internal {
-    //     if (IERC20(_token).allowance(address(this), _contract) < _amount) {
-    //         IERC20(_token).approve(_contract, 0);
-    //         IERC20(_token).approve(_contract, _amount);
-    //     }
-    // }
+    function _checkAllowance(
+        address _contract,
+        address _token,
+        uint256 _amount
+    ) internal {
+        if (IERC20(_token).allowance(address(this), _contract) < _amount) {
+            IERC20(_token).approve(_contract, 0);
+            IERC20(_token).approve(_contract, _amount);
+        }
+    }
 
     /**
      * @notice Returns the value deposited in Morpho protocol

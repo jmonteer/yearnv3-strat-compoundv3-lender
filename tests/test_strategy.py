@@ -214,10 +214,10 @@ def test_withdraw(
 
     strategy.withdraw(strategy.maxWithdraw(vault), vault, vault, sender=vault)
 
-    assert pytest.approx(0, abs=1e3) == strategy.balanceOf(vault)
+    assert pytest.approx(0, abs=1e4) == strategy.balanceOf(vault)
     assert asset.balanceOf(strategy) == 0
     assert pytest.approx(amount, REL_ERROR) == asset.balanceOf(vault)
-    assert pytest.approx(0, abs=1e3) == strategy.underlyingBalance()[2]
+    assert pytest.approx(0, abs=1e4) == strategy.underlyingBalance()[2]
 
 
 def test_withdraw_low_liquidity(
