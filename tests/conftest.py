@@ -5,7 +5,7 @@ from utils.constants import MAX_INT, WEEK, ROLES
 # this should be the address of the ERC-20 used by the strategy/vault
 ASSET_ADDRESS = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"  # USDC
 A_ASSET_ADDRESS = "0xBcca60bB61934080951369a648Fb03DF4F96263C"  # aUSDC
-ASSET_WHALE_ADDRESS = "0x0A59649758aa4d66E25f08Dd01271e891fe52199"  # USDC WHALE
+ASSET_WHALE_ADDRESS = "0x0A59649758aa4d66E25f08Dd01271e891fe52199"  # USDC whale
 
 
 @pytest.fixture(scope="session")
@@ -42,14 +42,17 @@ def amount(asset):
 
 @pytest.fixture(scope="session")
 def atoken():
-    # NOTE: adding default contract type because it's not verified
     return Contract(A_ASSET_ADDRESS)
 
 
 @pytest.fixture(scope="session")
 def aave_lending_pool():
-    # NOTE: adding default contract type because it's not verified
     return Contract("0x7d2768dE32b0b80b7a3454c06BdAc94A69DDc7A9")
+
+
+@pytest.fixture(scope="session")
+def aave_protocol_provider():
+    return Contract("0x057835Ad21a177dbdd3090bB1CAE03EaCF78Fc6d")
 
 
 @pytest.fixture(scope="session")

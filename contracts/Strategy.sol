@@ -189,14 +189,14 @@ contract Strategy is BaseStrategy, Ownable {
         IMorpho.SupplyBalance memory supplyBalance = MORPHO.supplyBalanceInOf(aToken, address(this));
 
         uint256 repaidToPool;
-        if (!market.isP2PDisabled) {
+        if (_amount > 0 && !market.isP2PDisabled) {
             if (delta.p2pBorrowDelta > 0) {
                 uint256 matchedDelta = Math.min(
                     WadRayMath.rayMul(delta.p2pBorrowDelta, indexes.poolBorrowIndex),
                     _amount
                 );
 
-                supplyBalance.inP2P = supplyBalance.inP2P + WadRayMath.rayDiv(matchedDelta, indexes.p2pSupplyIndex);
+                supplyBalance.inP2P += WadRayMath.rayDiv(matchedDelta, indexes.p2pSupplyIndex);
                 repaidToPool += matchedDelta;
                 _amount -= matchedDelta;
             }
@@ -207,8 +207,8 @@ contract Strategy is BaseStrategy, Ownable {
                     IMorpho.PositionType.BORROWERS_ON_POOL
                 );
                 uint256 firstPoolBorrowerBalance = MORPHO
-                .borrowBalanceInOf(aToken, firstPoolBorrower)
-                .onPool;
+                    .borrowBalanceInOf(aToken, firstPoolBorrower)
+                    .onPool;
 
                 if (firstPoolBorrowerBalance > 0) {
                     uint256 matchedP2P = Math.min(
@@ -216,7 +216,7 @@ contract Strategy is BaseStrategy, Ownable {
                         _amount
                     );
 
-                    supplyBalance.inP2P = supplyBalance.inP2P + WadRayMath.rayDiv(matchedP2P, indexes.p2pSupplyIndex);
+                    supplyBalance.inP2P += WadRayMath.rayDiv(matchedP2P, indexes.p2pSupplyIndex);
                     repaidToPool += matchedP2P;
                     _amount -= matchedP2P;
                 }
@@ -225,7 +225,7 @@ contract Strategy is BaseStrategy, Ownable {
 
         uint256 suppliedToPool;
         if (_amount > 0) {
-            supplyBalance.onPool = supplyBalance.onPool + WadRayMath.rayDiv(_amount, indexes.poolSupplyIndex);
+            supplyBalance.onPool += WadRayMath.rayDiv(_amount, indexes.poolSupplyIndex);
             suppliedToPool = _amount;
         }
 
@@ -259,17 +259,35 @@ contract Strategy is BaseStrategy, Ownable {
         IMorpho.SupplyBalance memory supplyBalance = MORPHO.supplyBalanceInOf(aToken, address(this));
         _amount = Math.min(supplyBalance.onPool + supplyBalance.inP2P, _amount);
 
-        uint256 removedFromPool = Math.min(supplyBalance.onPool, _amount);
-        supplyBalance.onPool = supplyBalance.onPool - WadRayMath.rayDiv(removedFromPool, indexes.poolSupplyIndex);
-        _amount -= removedFromPool;
+        uint256 withdrawmFromPool = Math.min(
+            WadRayMath.rayMul(supplyBalance.onPool, indexes.poolSupplyIndex),
+            _amount
+        );
+        supplyBalance.onPool -= WadRayMath.rayDiv(withdrawmFromPool, indexes.poolSupplyIndex);
+        _amount -= withdrawmFromPool;
 
-        uint256 removedFromP2P;
         if (_amount > 0) {
-            removedFromP2P = supplyBalance.inP2P - WadRayMath.rayDiv(_amount, indexes.p2pSupplyIndex);
-            supplyBalance.inP2P -= removedFromP2P;
+            supplyBalance.inP2P -= WadRayMath.rayDiv(_amount, indexes.p2pSupplyIndex);
+
+            // TODO: think about remove this step to save gas because it won't affect our apr to much, we can pass worst possible case without p2p matching
+            // try to match p2p
+            address firstPoolSupplier = MORPHO.getHead(
+                aToken,
+                IMorpho.PositionType.SUPPLIERS_ON_POOL
+            );
+            uint256 firstPoolSupplierBalance = MORPHO
+                .supplyBalanceInOf(aToken, firstPoolSupplier)
+                .onPool;
+
+            uint256 matchedP2P = Math.min(
+                WadRayMath.rayMul(firstPoolSupplierBalance, indexes.poolSupplyIndex),
+                _amount
+            );
+            _amount -= matchedP2P;
         }
 
-        (uint256 poolSupplyRate, uint256 variableBorrowRate) = getAaveRates(0, removedFromP2P, 0, removedFromPool);
+        // _amount represents amount removed from p2p deals
+        (uint256 poolSupplyRate, uint256 variableBorrowRate) = getAaveRates(0, _amount, 0, withdrawmFromPool);
 
         uint256 p2pSupplyRate = computeP2PSupplyRatePerYear(
             P2PRateComputeParams({

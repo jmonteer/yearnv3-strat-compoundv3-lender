@@ -1,6 +1,5 @@
-from ape import reverts, chain, Contract, accounts
+from ape import Contract
 import pytest
-from utils.constants import REL_ERROR, MAX_INT
 
 
 def test_apr(
@@ -12,17 +11,32 @@ def test_apr(
     provide_strategy_with_debt,
     atoken,
     aave_lending_pool,
+    aave_protocol_provider,
 ):
     vault, strategy = create_vault_and_strategy(gov, amount)
-    new_debt = amount
-    provide_strategy_with_debt(gov, strategy, vault, new_debt)
+    expected_apr = strategy.aprAfterDebtChange(amount)
 
-    # get aave supply rates in RAY, downscale to WAD
-    current_real_apr = aave_lending_pool.getReserveData(asset)[3] / 1e9
-    current_expected_apr = strategy.aprAfterDebtChange(0)
+    # calculate aave supply rate after supplying amount
+    interest_rate_contract = Contract(aave_lending_pool.getReserveData(asset)[10])
+    pool_data = aave_protocol_provider.getReserveData(asset)
+    reserve_factor = aave_protocol_provider.getReserveConfigurationData(asset)[4]
+    aave_supply_rate = interest_rate_contract.calculateInterestRates(
+        asset,
+        pool_data[0] + amount,
+        pool_data[1],
+        pool_data[2],
+        pool_data[6],
+        reserve_factor
+    )[0] / 1e9
 
-    # strategy calculates lower bound of apr so we don't check upper bound
-    assert current_real_apr >= current_expected_apr
+    # expected apr must at least as in aave
+    assert int(expected_apr / 10) >= int(aave_supply_rate / 10)
+
+    provide_strategy_with_debt(gov, strategy, vault, amount)
+    current_apr = strategy.aprAfterDebtChange(0)
+
+    # strategy calculates lowest apr so we don't check upper bound
+    assert current_apr >= expected_apr
 
 
 def test_apr_after_asset_deposit(
@@ -33,7 +47,6 @@ def test_apr_after_asset_deposit(
     amount,
     provide_strategy_with_debt,
     atoken,
-    aave_lending_pool,
     whale,
 ):
     amount_to_deposit = int(amount / 2)
@@ -56,7 +69,6 @@ def test_apr_after_asset_withdraw(
     amount,
     provide_strategy_with_debt,
     atoken,
-    aave_lending_pool,
     whale,
 ):
     vault, strategy = create_vault_and_strategy(gov, amount)
