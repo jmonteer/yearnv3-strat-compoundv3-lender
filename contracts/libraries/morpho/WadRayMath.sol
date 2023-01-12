@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GNU AGPLv3
 pragma solidity 0.8.14;
 
+// prettier-ignore
 // title WadRayMath.
 // author Morpho Labs.
 // custom:contact security@morpho.xyz

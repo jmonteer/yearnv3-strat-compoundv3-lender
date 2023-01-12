@@ -9,5 +9,7 @@ interface ILendingPool {
      * @param asset The address of the underlying asset of the reserve
      * @return The state of the reserve
      **/
-    function getReserveData(address asset) external view returns (DataTypes.ReserveData memory);
+    function getReserveData(
+        address asset
+    ) external view returns (DataTypes.ReserveData memory);
 }

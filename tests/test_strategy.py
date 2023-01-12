@@ -247,9 +247,10 @@ def test_withdraw_low_liquidity(
     assert strategy.underlyingBalance()[2] == strategy.balanceOf(vault)
     assert asset.balanceOf(strategy) == 0
     assert pytest.approx(10 ** vault.decimals(), REL_ERROR) == asset.balanceOf(vault)
-    assert pytest.approx(
-        new_debt - 10 ** vault.decimals(), rel=1e-5
-    ) == strategy.underlyingBalance()[2]
+    assert (
+        pytest.approx(new_debt - 10 ** vault.decimals(), rel=1e-5)
+        == strategy.underlyingBalance()[2]
+    )
 
 
 def test_withdraw_mev_bot(

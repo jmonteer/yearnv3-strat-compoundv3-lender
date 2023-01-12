@@ -2,7 +2,9 @@
 pragma solidity 0.8.14;
 
 interface IProtocolDataProvider {
-    function getReserveConfigurationData(address asset)
+    function getReserveConfigurationData(
+        address asset
+    )
         external
         view
         returns (
@@ -18,7 +20,9 @@ interface IProtocolDataProvider {
             bool isFrozen
         );
 
-    function getReserveData(address asset)
+    function getReserveData(
+        address asset
+    )
         external
         view
         returns (
