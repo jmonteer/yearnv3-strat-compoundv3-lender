@@ -1,4 +1,4 @@
-# yearnv3-ape-aave-lender
+# YearnV3 Morpho-Aave lender
 
 ## How to start
 
@@ -11,5 +11,4 @@
     ape compile
     
     ape test
-    
     
