@@ -35,12 +35,12 @@ contract Strategy is BaseStrategy, Ownable {
     address internal constant MORPHO_TOKEN =
         0x9994E35Db50125E0DF82e4c2dde62496CE330999;
     // used for claiming reward Morpho token
-    address public rewardsDistributor;
+    address public rewardsDistributor = 0x3B14E5C73e0A56D607A8688098326fD4b4292135;
     // aToken = Morpho Aave Market for want token
     address public aToken;
     // Max gas used for matching with p2p deals
-    uint256 public maxGasForMatching;
-    address public tradeFactory;
+    uint256 public maxGasForMatching = 100000;
+    address public tradeFactory = 0xd6a8ae62f4d593DAf72E2D7c9f7bDB89AB069F06;
 
     constructor(
         address _vault,
@@ -269,8 +269,8 @@ contract Strategy is BaseStrategy, Ownable {
         if (_amount > 0) {
             supplyBalance.inP2P -= WadRayMath.rayDiv(_amount, indexes.p2pSupplyIndex);
 
-            // TODO: think about remove this step to save gas because it won't affect our apr to much, we can pass worst possible case without p2p matching
             // try to match p2p
+            // removing this step would save gas but it will result in predicting lower apr
             address firstPoolSupplier = MORPHO.getHead(
                 aToken,
                 IMorpho.PositionType.SUPPLIERS_ON_POOL
