@@ -52,12 +52,14 @@ def atoken():
 
 @pytest.fixture(scope="session")
 def aave_lending_pool():
-    return Contract("0x7d2768dE32b0b80b7a3454c06BdAc94A69DDc7A9")
+    # NOTE: adding default contract type because it's not verified
+    return Contract("0x7d2768dE32b0b80b7a3454c06BdAc94A69DDc7A9", project.ILendingPool.contract_type)
 
 
 @pytest.fixture(scope="session")
 def aave_protocol_provider():
-    return Contract("0x057835Ad21a177dbdd3090bB1CAE03EaCF78Fc6d")
+    # NOTE: adding default contract type because it's not verified
+    return Contract("0x057835Ad21a177dbdd3090bB1CAE03EaCF78Fc6d", project.IProtocolDataProvider.contract_type)
 
 
 @pytest.fixture(scope="session")
